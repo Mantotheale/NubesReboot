@@ -1,10 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use wgpu::{
-    CurrentSurfaceTexture,
-    util::DeviceExt
-};
+use wgpu::{util::DeviceExt, CurrentSurfaceTexture, IndexFormat};
 use winit::{
     application::ApplicationHandler,
     event::*,
@@ -22,9 +19,15 @@ struct Vertex {
 }
 
 const VERTICES: &[Vertex] = &[
-    Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
-    Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
+    Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 0.0, 0.0] },
     Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
+    Vertex { position: [0.5, 0.5, 0.0], color: [1.0, 1.0, 1.0] },
+    Vertex { position: [-0.5, 0.5, 0.0], color: [0.0, 1.0, 0.0] },
+];
+
+const INDICES: &[u32] = &[
+    0, 1, 3,
+    1, 2, 3
 ];
 
 #[derive(Debug)]
@@ -52,6 +55,7 @@ pub struct State {
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
     last_sec: Instant,
     render_count: u32
 }
@@ -150,6 +154,14 @@ impl State {
             ],
         };
 
+        let index_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: bytemuck::cast_slice(INDICES),
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("render pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -186,7 +198,7 @@ impl State {
             cache: None,
         });
 
-        Ok(Self { window, surface, device, queue, config, pipeline, vertex_buffer, last_sec: Instant::now(), render_count: 0 })
+        Ok(Self { window, surface, device, queue, config, pipeline, vertex_buffer, index_buffer, last_sec: Instant::now(), render_count: 0 })
     }
 
     pub fn resize(&mut self) {
@@ -250,7 +262,8 @@ impl State {
 
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.draw(0..3, 0..1);
+        render_pass.set_index_buffer(self.index_buffer.slice(..), IndexFormat::Uint32);
+        render_pass.draw_indexed(0..6, 0, 0..1);
         drop(render_pass);
 
         let command_buffer = encoder.finish();
