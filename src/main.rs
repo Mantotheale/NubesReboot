@@ -1,4 +1,4 @@
-use std::fmt::{Display, Formatter, Write};
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use wgpu::{CurrentSurfaceTexture};
@@ -34,6 +34,7 @@ pub struct State {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    pipeline: wgpu::RenderPipeline,
     last_sec: Instant,
     render_count: u32
 }
@@ -95,7 +96,53 @@ impl State {
 
         surface.configure(&device, &config);
 
-        Ok(Self { window, surface, device, queue, config, last_sec: Instant::now(), render_count: 0 })
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(include_str!("../resources/shaders/simple_shader.wgsl").into())
+        });
+
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[],
+                immediate_size: 0,
+            });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("render pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                unclipped_depth: false,
+                polygon_mode: Default::default(),
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::all(),
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        Ok(Self { window, surface, device, queue, config, pipeline, last_sec: Instant::now(), render_count: 0 })
     }
 
     pub fn resize(&mut self) {
@@ -133,7 +180,7 @@ impl State {
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
-        let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("render pass"),
             color_attachments: &[
                 Some(wgpu::RenderPassColorAttachment {
@@ -156,6 +203,9 @@ impl State {
             occlusion_query_set: None,
             multiview_mask: None,
         });
+
+        render_pass.set_pipeline(&self.pipeline);
+        render_pass.draw(0..3, 0..1);
         drop(render_pass);
 
         let command_buffer = encoder.finish();
