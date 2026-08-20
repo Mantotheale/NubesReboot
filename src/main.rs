@@ -1,7 +1,10 @@
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use wgpu::{CurrentSurfaceTexture};
+use wgpu::{
+    CurrentSurfaceTexture,
+    util::DeviceExt
+};
 use winit::{
     application::ApplicationHandler,
     event::*,
@@ -10,6 +13,19 @@ use winit::{
     window::Window,
 };
 use winit::window::WindowId;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 3]
+}
+
+const VERTICES: &[Vertex] = &[
+    Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
+    Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
+    Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
+];
 
 #[derive(Debug)]
 pub enum InitializationError {
@@ -35,6 +51,7 @@ pub struct State {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
     last_sec: Instant,
     render_count: u32
 }
@@ -108,6 +125,31 @@ impl State {
                 immediate_size: 0,
             });
 
+        let vertex_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(VERTICES),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+
+        let vertex_buffer_layout = wgpu::VertexBufferLayout {
+            array_stride: size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x3,
+                    offset: 0,
+                    shader_location: 0,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x3,
+                    offset: size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                }
+            ],
+        };
+
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("render pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -115,7 +157,9 @@ impl State {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 compilation_options: Default::default(),
-                buffers: &[],
+                buffers: &[
+                    Some(vertex_buffer_layout)
+                ],
             },
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -142,7 +186,7 @@ impl State {
             cache: None,
         });
 
-        Ok(Self { window, surface, device, queue, config, pipeline, last_sec: Instant::now(), render_count: 0 })
+        Ok(Self { window, surface, device, queue, config, pipeline, vertex_buffer, last_sec: Instant::now(), render_count: 0 })
     }
 
     pub fn resize(&mut self) {
@@ -205,6 +249,7 @@ impl State {
         });
 
         render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.draw(0..3, 0..1);
         drop(render_pass);
 

@@ -1,17 +1,20 @@
+struct VertexShaderOutput {
+    @builtin(position) position: vec4f,
+    @location(0) color: vec3f
+}
+
 @vertex
 fn vs_main(
-    @builtin(vertex_index) vertex_index: u32
-) -> @builtin(position) vec4f {
-    const vertices = array<vec3f, 3>(
-        vec3f(-0.5, -0.5, 0),
-        vec3f(0.5, -0.5, 0),
-        vec3f(0, 0.5, 0),
-    );
-
-    return vec4f(vertices[vertex_index], 1.0);
+    @location(0) vertex_position: vec3f,
+    @location(1) vertex_color: vec3f
+) -> VertexShaderOutput {
+    var output: VertexShaderOutput;
+    output.position = vec4f(vertex_position, 1.0);
+    output.color = vertex_color;
+    return output;
 }
 
 @fragment
-fn fs_main() -> @location(0) vec4f {
-    return vec4f(0.1, 0.2, 0.3, 1.0);
+fn fs_main(input: VertexShaderOutput) -> @location(0) vec4f {
+    return vec4f(input.color, 1.0);
 }
