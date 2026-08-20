@@ -1,5 +1,7 @@
+use std::fmt::{Display, Formatter, Write};
 use std::sync::Arc;
-use wgpu::{CurrentSurfaceTexture, Features, TextureViewDescriptor};
+use std::time::{Duration, Instant};
+use wgpu::{CurrentSurfaceTexture};
 use winit::{
     application::ApplicationHandler,
     event::*,
@@ -20,12 +22,20 @@ pub enum InitializationError {
 #[derive(Debug)]
 pub struct LostSurfaceError { }
 
+impl Display for LostSurfaceError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("The surface was lost")
+    }
+}
+
 pub struct State {
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration
+    config: wgpu::SurfaceConfiguration,
+    last_sec: Instant,
+    render_count: u32
 }
 
 impl State {
@@ -54,7 +64,7 @@ impl State {
 
         let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
             label: None,
-            required_features: Features::empty(),
+            required_features: wgpu::Features::empty(),
             required_limits: Default::default(),
             experimental_features: Default::default(),
             memory_hints: Default::default(),
@@ -77,7 +87,7 @@ impl State {
             color_space: wgpu::SurfaceColorSpace::Auto,
             width: window_size.width,
             height: window_size.height,
-            present_mode: wgpu::PresentMode::AutoVsync,
+            present_mode: wgpu::PresentMode::AutoNoVsync,
             desired_maximum_frame_latency: 2,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
@@ -85,7 +95,7 @@ impl State {
 
         surface.configure(&device, &config);
 
-        Ok(Self { window, surface, device, queue, config })
+        Ok(Self { window, surface, device, queue, config, last_sec: Instant::now(), render_count: 0 })
     }
 
     pub fn resize(&mut self) {
@@ -99,6 +109,12 @@ impl State {
     }
 
     pub fn render(&mut self) -> Result<(), LostSurfaceError> {
+        let current_time = Instant::now();
+        if current_time - self.last_sec >= Duration::from_secs(1) {
+            println!("Draws: {}", self.render_count);
+            self.last_sec = current_time;
+            self.render_count = 0;
+        }
         self.window.request_redraw();
 
         let output = match self.surface.get_current_texture() {
@@ -113,7 +129,40 @@ impl State {
             CurrentSurfaceTexture::Lost => return Err(LostSurfaceError { })
         };
 
-        let view = output.texture.create_view(&TextureViewDescriptor::default());
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+
+        let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("render pass"),
+            color_attachments: &[
+                Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.7,
+                            g: 0.3,
+                            b: 0.5,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store
+                    },
+                })
+            ],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        drop(render_pass);
+
+        let command_buffer = encoder.finish();
+        self.queue.submit(std::iter::once(command_buffer));
+        self.queue.present(output);
+
+        self.render_count += 1;
 
         Ok(())
     }
@@ -139,11 +188,11 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
-        let Some(_) = &self.state else { return; };
+        let Some(s) = &mut self.state else { return; };
 
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::Resized(_) => if let Some(s) = &mut self.state { s.resize() },
+            WindowEvent::Resized(_) => s.resize(),
             WindowEvent::KeyboardInput {
                 event: KeyEvent {
                     physical_key: PhysicalKey::Code(code),
@@ -153,6 +202,12 @@ impl ApplicationHandler for App {
                 (KeyCode::Escape, true) => event_loop.exit(),
                 _ => {}
             },
+            WindowEvent::RedrawRequested => {
+                if let Err(err) = s.render() {
+                    log::error!("{err}");
+                    event_loop.exit();
+                }
+            }
             _ => {}
         }
     }
