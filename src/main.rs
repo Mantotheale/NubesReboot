@@ -15,14 +15,14 @@ use winit::window::WindowId;
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 3],
-    color: [f32; 3]
+    tex_coords: [f32; 2]
 }
 
 const VERTICES: &[Vertex] = &[
-    Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 0.0, 0.0] },
-    Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
-    Vertex { position: [0.5, 0.5, 0.0], color: [1.0, 1.0, 1.0] },
-    Vertex { position: [-0.5, 0.5, 0.0], color: [0.0, 1.0, 0.0] },
+    Vertex { position: [-0.5, -0.5, 0.0], tex_coords: [0.0, 0.0] },
+    Vertex { position: [0.5, -0.5, 0.0], tex_coords: [1.0, 0.0] },
+    Vertex { position: [0.5, 0.5, 0.0], tex_coords: [1.0, 1.0] },
+    Vertex { position: [-0.5, 0.5, 0.0], tex_coords: [0.0, 1.0] },
 ];
 
 const INDICES: &[u32] = &[
@@ -35,7 +35,9 @@ pub enum InitializationError {
     CreateSurfaceError(wgpu::CreateSurfaceError),
     AdapterError(wgpu::RequestAdapterError),
     RequestDeviceError(wgpu::RequestDeviceError),
-    NoSRGBSurface
+    NoSRGBSurface,
+    CantLoadImageError(image::ImageError),
+    CantLoadRGBAError
 }
 
 #[derive(Debug)]
@@ -56,6 +58,7 @@ pub struct State {
     pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+    texture_bind_group: wgpu::BindGroup,
     last_sec: Instant,
     render_count: u32
 }
@@ -122,13 +125,6 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(include_str!("../resources/shaders/simple_shader.wgsl").into())
         });
 
-        let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[],
-                immediate_size: 0,
-            });
-
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
@@ -147,7 +143,7 @@ impl State {
                     shader_location: 0,
                 },
                 wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: wgpu::VertexFormat::Float32x2,
                     offset: size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
                 }
@@ -161,6 +157,104 @@ impl State {
                 usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             }
         );
+
+        let image_bytes = include_bytes!("../resources/tiles/reshiram.png");
+        let image = image::load_from_memory(image_bytes)
+            .map_err(|err| InitializationError::CantLoadImageError(err))?
+            .flipv();
+        let image_rgba = image.as_rgba8().ok_or(InitializationError::CantLoadRGBAError)?;
+
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Reshiram texture"),
+            size: wgpu::Extent3d {
+                width: image_rgba.width(),
+                height: image_rgba.height(),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &image_rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(image.width() * 4),
+                rows_per_image: Some(image.height()),
+            },
+            wgpu::Extent3d {
+                width: image.width(),
+                height: image.height(),
+                depth_or_array_layers: 1,
+            }
+        );
+
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("texture sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("texture bind group layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                }
+            ],
+        });
+
+        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("texture bind group"),
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&texture_sampler),
+                }
+            ],
+        });
+
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[Some(&texture_bind_group_layout)],
+                immediate_size: 0,
+            });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("render pipeline"),
@@ -190,7 +284,7 @@ impl State {
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::all(),
                 })],
             }),
@@ -198,7 +292,7 @@ impl State {
             cache: None,
         });
 
-        Ok(Self { window, surface, device, queue, config, pipeline, vertex_buffer, index_buffer, last_sec: Instant::now(), render_count: 0 })
+        Ok(Self { window, surface, device, queue, config, pipeline, vertex_buffer, index_buffer, texture_bind_group, last_sec: Instant::now(), render_count: 0 })
     }
 
     pub fn resize(&mut self) {
@@ -263,6 +357,7 @@ impl State {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), IndexFormat::Uint32);
+        render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
         render_pass.draw_indexed(0..6, 0, 0..1);
         drop(render_pass);
 
