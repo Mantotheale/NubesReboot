@@ -3,6 +3,8 @@ use crate::entry_point::EntryPoint;
 
 mod engine;
 mod entry_point;
+mod vertex_buffer;
+mod index_buffer;
 
 pub fn main() {
     let event_loop = EventLoop::with_user_event().build().expect("Couldn't build event loop");

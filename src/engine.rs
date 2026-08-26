@@ -6,6 +6,7 @@ use winit::event::{KeyEvent, WindowEvent};
 use winit::event_loop::EventLoopProxy;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
+use crate::vertex_buffer::{VertexAttribute, VertexBuffer, VertexBufferLayout};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -47,7 +48,7 @@ pub struct Engine {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
+    vertex_buffer: VertexBuffer,
     index_buffer: wgpu::Buffer,
     texture_bind_group: wgpu::BindGroup,
     next_update: Instant,
@@ -122,30 +123,10 @@ impl Engine {
             source: wgpu::ShaderSource::Wgsl(include_str!("../resources/shaders/simple_shader.wgsl").into())
         });
 
-        let vertex_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(VERTICES),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            }
-        );
-
-        let vertex_buffer_layout = wgpu::VertexBufferLayout {
-            array_stride: size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x3,
-                    offset: 0,
-                    shader_location: 0,
-                },
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x2,
-                    offset: size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                }
-            ],
-        };
+        let vertex_buffer_layout = VertexBufferLayout::new(&[
+            VertexAttribute::Float3, VertexAttribute::Float2
+        ]);
+        let vertex_buffer = VertexBuffer::new(device.clone(), vertex_buffer_layout, bytemuck::cast_slice(VERTICES));
 
         let index_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -261,7 +242,7 @@ impl Engine {
                 entry_point: Some("vs_main"),
                 compilation_options: Default::default(),
                 buffers: &[
-                    Some(vertex_buffer_layout)
+                    Some(vertex_buffer.layout().wgpu_layout())
                 ],
             },
             primitive: wgpu::PrimitiveState {
@@ -294,7 +275,16 @@ impl Engine {
         let one_sec_duration = Duration::from_secs(1);
 
         Ok(Self {
-            proxy, window, surface, device, queue, config, pipeline, vertex_buffer, index_buffer, texture_bind_group,
+            proxy,
+            window,
+            surface,
+            device,
+            queue,
+            config,
+            pipeline,
+            vertex_buffer,
+            index_buffer,
+            texture_bind_group,
             next_update: now + update_duration,
             next_one_sec_update: now + one_sec_duration,
             update_duration,
@@ -374,7 +364,7 @@ impl Engine {
         });
 
         render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.as_wgpu_buffer().slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), IndexFormat::Uint32);
         render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
         render_pass.draw_indexed(0..6, 0, 0..1);
