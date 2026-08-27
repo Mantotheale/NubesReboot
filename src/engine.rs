@@ -6,6 +6,7 @@ use winit::event::{KeyEvent, WindowEvent};
 use winit::event_loop::EventLoopProxy;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
+use crate::index_buffer::IndexBuffer;
 use crate::vertex_buffer::{VertexAttribute, VertexBuffer, VertexBufferLayout};
 
 #[repr(C)]
@@ -49,7 +50,7 @@ pub struct Engine {
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
     vertex_buffer: VertexBuffer,
-    index_buffer: wgpu::Buffer,
+    index_buffer: IndexBuffer,
     texture_bind_group: wgpu::BindGroup,
     next_update: Instant,
     next_one_sec_update: Instant,
@@ -128,13 +129,7 @@ impl Engine {
         ]);
         let vertex_buffer = VertexBuffer::new(device.clone(), vertex_buffer_layout, bytemuck::cast_slice(VERTICES));
 
-        let index_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-            }
-        );
+        let index_buffer = IndexBuffer::new_u32(&device, INDICES);
 
         let image_bytes = include_bytes!("../resources/tiles/reshiram.png");
         let image = image::load_from_memory(image_bytes)
@@ -365,7 +360,7 @@ impl Engine {
 
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.as_wgpu_buffer().slice(..));
-        render_pass.set_index_buffer(self.index_buffer.slice(..), IndexFormat::Uint32);
+        render_pass.set_index_buffer(self.index_buffer.as_wgpu_buffer().slice(..), self.index_buffer.format().wgpu_format());
         render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
         render_pass.draw_indexed(0..6, 0, 0..1);
         drop(render_pass);
