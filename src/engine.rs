@@ -7,6 +7,7 @@ use winit::event_loop::EventLoopProxy;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
 use crate::index_buffer::IndexBuffer;
+use crate::shader::Shader;
 use crate::texture::{Texture, TextureSampler};
 use crate::vertex_buffer::{VertexAttribute, VertexBuffer, VertexBufferLayout};
 
@@ -121,17 +122,20 @@ impl Engine {
 
         surface.configure(&device, &config);
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(include_str!("../resources/shaders/simple_shader.wgsl").into())
-        });
-
         let vertex_buffer_layout = VertexBufferLayout::new(&[
             VertexAttribute::Float3, VertexAttribute::Float2
         ]);
         let vertex_buffer = VertexBuffer::new(device.clone(), vertex_buffer_layout, bytemuck::cast_slice(VERTICES));
 
         let index_buffer = IndexBuffer::new_u32(&device, INDICES);
+
+        let shader = Shader::new(
+            &device,
+            include_str!("../resources/shaders/simple_shader.wgsl"),
+            "vs_main",
+            "fs_main",
+            vertex_buffer.layout()
+        );
 
         let image_bytes = include_bytes!("../resources/tiles/reshiram.png");
         let image = image::load_from_memory(image_bytes)
@@ -156,11 +160,11 @@ impl Engine {
             label: Some("render pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
+                module: shader.module(),
+                entry_point: Some(shader.vertex_entry_point()),
                 compilation_options: Default::default(),
                 buffers: &[
-                    Some(vertex_buffer.layout().wgpu_layout())
+                    Some(shader.vertex_layout().wgpu_layout())
                 ],
             },
             primitive: wgpu::PrimitiveState {
@@ -175,8 +179,8 @@ impl Engine {
             depth_stencil: None,
             multisample: Default::default(),
             fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
+                module: shader.module(),
+                entry_point: Some(shader.fragment_entry_point()),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,

@@ -28,6 +28,7 @@ impl VertexAttribute {
     }
 }
 
+#[derive(Clone)]
 pub struct VertexBufferLayout {
     attributes: Vec<wgpu::VertexAttribute>,
     byte_size: usize

@@ -6,6 +6,7 @@ mod entry_point;
 mod vertex_buffer;
 mod index_buffer;
 mod texture;
+mod shader;
 
 pub fn main() {
     let event_loop = EventLoop::with_user_event().build().expect("Couldn't build event loop");
