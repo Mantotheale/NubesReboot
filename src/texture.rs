@@ -1,80 +1,87 @@
+use std::sync::OnceLock;
+
 pub struct TextureSampler {
     bind_group: wgpu::BindGroup,
-    layout: wgpu::BindGroupLayout
 }
 
 impl TextureSampler {
+    pub fn wgpu_layout(device: &wgpu::Device) -> &'static wgpu::BindGroupLayout {
+        static LAYOUT: OnceLock<wgpu::BindGroupLayout> = OnceLock::new();
+
+        LAYOUT.get_or_init(|| {
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: None,
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    }
+                ],
+            })
+        })
+    }
+
     pub fn default_sampler(device: &wgpu::Device) -> Self {
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: None,
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-            ..Default::default()
+        static SAMPLER_BIND_GROUP: OnceLock<wgpu::BindGroup> = OnceLock::new();
+
+        let bind_group = SAMPLER_BIND_GROUP.get_or_init(|| {
+            let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+                label: None,
+                address_mode_u: wgpu::AddressMode::Repeat,
+                address_mode_v: wgpu::AddressMode::Repeat,
+                address_mode_w: wgpu::AddressMode::Repeat,
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+                ..Default::default()
+            });
+            
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: Self::wgpu_layout(device),
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    }
+                ],
+            })
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                }
-            ],
-        });
-
-        let sampler_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                }
-            ],
-        });
-
-        Self {
-            bind_group: sampler_bind_group,
-            layout: bind_group_layout
-        }
+        Self { bind_group: bind_group.clone() }
     }
 
     pub fn wgpu_bind_group(&self) -> &wgpu::BindGroup {
         &self.bind_group
     }
-
-    pub fn wgpu_layout(&self) -> &wgpu::BindGroupLayout {
-        &self.layout
-    }
 }
 
 pub struct Texture {
-    bind_group: wgpu::BindGroup,
-    layout: wgpu::BindGroupLayout
+    bind_group: wgpu::BindGroup
 }
 
 impl Texture {
-    fn texture_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                }
-            ],
+    pub fn wgpu_layout(device: &wgpu::Device) -> &'static wgpu::BindGroupLayout {
+        static LAYOUT: OnceLock<wgpu::BindGroupLayout> = OnceLock::new();
+
+        LAYOUT.get_or_init(|| {
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: None,
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    }
+                ],
+            })
         })
     }
 
@@ -116,7 +123,7 @@ impl Texture {
 
         let texture_view: wgpu::TextureView = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let texture_bind_group_layout = Self::texture_bind_group_layout(device);
+        let texture_bind_group_layout = Self::wgpu_layout(device);
 
         let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
@@ -131,15 +138,10 @@ impl Texture {
 
         Self {
             bind_group: texture_bind_group,
-            layout: texture_bind_group_layout
         }
     }
 
     pub fn wgpu_bind_group(&self) -> &wgpu::BindGroup {
         &self.bind_group
-    }
-
-    pub fn wgpu_layout(&self) -> &wgpu::BindGroupLayout {
-        &self.layout
     }
 }

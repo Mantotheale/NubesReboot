@@ -146,8 +146,8 @@ impl Engine {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
-                    Some(texture_sampler.wgpu_layout()),
-                    Some(texture.wgpu_layout())
+                    Some(TextureSampler::wgpu_layout(&device)),
+                    Some(Texture::wgpu_layout(&device))
                 ],
                 immediate_size: 0,
             });
