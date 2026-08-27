@@ -17,9 +17,10 @@ fn vs_main(input: VertexShaderInput) -> VertexShaderOutput {
 }
 
 @group(0) @binding(0)
-var tex: texture_2d<f32>;
-@group(0) @binding(1)
 var tex_sampler: sampler;
+
+@group(1) @binding(0)
+var tex: texture_2d<f32>;
 
 @fragment
 fn fs_main(input: VertexShaderOutput) -> @location(0) vec4f {

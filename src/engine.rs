@@ -7,6 +7,7 @@ use winit::event_loop::EventLoopProxy;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
 use crate::index_buffer::IndexBuffer;
+use crate::texture::{Texture, TextureSampler};
 use crate::vertex_buffer::{VertexAttribute, VertexBuffer, VertexBufferLayout};
 
 #[repr(C)]
@@ -51,7 +52,8 @@ pub struct Engine {
     pipeline: wgpu::RenderPipeline,
     vertex_buffer: VertexBuffer,
     index_buffer: IndexBuffer,
-    texture_bind_group: wgpu::BindGroup,
+    texture: Texture,
+    texture_sampler: TextureSampler,
     next_update: Instant,
     next_one_sec_update: Instant,
     update_duration: Duration,
@@ -137,95 +139,16 @@ impl Engine {
             .flipv();
         let image_rgba = image.as_rgba8().ok_or(InitializationError::CantLoadRGBAError)?;
 
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Reshiram texture"),
-            size: wgpu::Extent3d {
-                width: image_rgba.width(),
-                height: image_rgba.height(),
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &image_rgba,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(image.width() * 4),
-                rows_per_image: Some(image.height()),
-            },
-            wgpu::Extent3d {
-                width: image.width(),
-                height: image.height(),
-                depth_or_array_layers: 1,
-            }
-        );
-
-        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        let texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("texture sampler"),
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-            ..Default::default()
-        });
-
-        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("texture bind group layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                }
-            ],
-        });
-
-        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("texture bind group"),
-            layout: &texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&texture_sampler),
-                }
-            ],
-        });
+        let texture = Texture::new(&device, &queue, image.width() as usize, image.height() as usize, image_rgba);
+        let texture_sampler = TextureSampler::default_sampler(&device);
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[Some(&texture_bind_group_layout)],
+                bind_group_layouts: &[
+                    Some(texture_sampler.wgpu_layout()),
+                    Some(texture.wgpu_layout())
+                ],
                 immediate_size: 0,
             });
 
@@ -279,7 +202,8 @@ impl Engine {
             pipeline,
             vertex_buffer,
             index_buffer,
-            texture_bind_group,
+            texture,
+            texture_sampler,
             next_update: now + update_duration,
             next_one_sec_update: now + one_sec_duration,
             update_duration,
@@ -361,7 +285,8 @@ impl Engine {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.as_wgpu_buffer().slice(..));
         render_pass.set_index_buffer(self.index_buffer.as_wgpu_buffer().slice(..), self.index_buffer.format().wgpu_format());
-        render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
+        render_pass.set_bind_group(0, self.texture_sampler.wgpu_bind_group(), &[]);
+        render_pass.set_bind_group(1, self.texture.wgpu_bind_group(), &[]);
         render_pass.draw_indexed(0..6, 0, 0..1);
         drop(render_pass);
 
