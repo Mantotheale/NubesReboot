@@ -7,6 +7,8 @@ mod vertex_buffer;
 mod index_buffer;
 mod texture;
 mod shader;
+mod pipeline;
+mod renderer;
 
 pub fn main() {
     let event_loop = EventLoop::with_user_event().build().expect("Couldn't build event loop");
