@@ -1,0 +1,88 @@
+use std::num::NonZeroU8;
+use crate::color::Color;
+use crate::constants::MATH_EPSILON;
+use crate::math::segment::Segment2f;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct ColoredSegmentVertex {
+    position: [f32; 2],
+    normal: [f32; 2],
+    pixel_width: u32,
+    color: [f32; 4]
+}
+
+impl ColoredSegmentVertex {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: size_of::<ColoredSegmentVertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: 2 * size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Uint32,
+                },
+                wgpu::VertexAttribute {
+                    offset: (2 * size_of::<[f32; 2]>() + size_of::<u32>()) as wgpu::BufferAddress,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        }
+    }
+
+    fn new(segment: Segment2f, color: Color, pixel_width: NonZeroU8) -> [Self; 4] {
+        let origin = segment.origin().into();
+        let destination = segment.destination().into();
+        let left_normal = segment.left_normal()
+            .normalized(MATH_EPSILON)
+            .expect("A segment length is always positive")
+            .into();
+        let right_normal = segment.right_normal()
+            .normalized(MATH_EPSILON)
+            .expect("A segment length is always positive")
+            .into();
+        let color = color.into();
+
+        let bottom_left = Self {
+            position: origin,
+            normal: right_normal,
+            pixel_width: pixel_width.get() as u32,
+            color
+        };
+
+        let bottom_right = Self {
+            position: destination,
+            normal: right_normal,
+            pixel_width: pixel_width.get() as u32,
+            color
+        };
+
+        let top_right = Self {
+            position: destination,
+            normal: left_normal,
+            pixel_width: pixel_width.get() as u32,
+            color
+        };
+
+        let top_left = Self {
+            position: origin,
+            normal: left_normal,
+            pixel_width: pixel_width.get() as u32,
+            color
+        };
+
+        [bottom_left, bottom_right, top_right, top_left]
+    }
+}
