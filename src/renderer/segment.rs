@@ -5,7 +5,7 @@ use crate::math::segment::Segment2f;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct ColoredSegmentVertex {
+pub struct ColoredSegmentVertex {
     position: [f32; 2],
     normal: [f32; 2],
     pixel_width: u32,
@@ -13,7 +13,18 @@ struct ColoredSegmentVertex {
 }
 
 impl ColoredSegmentVertex {
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
+    pub const VERTICES_PER_SEGMENT: usize = 4;
+
+    pub const INDICES_PER_SEGMENT: usize = 6;
+    
+    pub const PRIMITIVE_INDICES: [usize; Self::INDICES_PER_SEGMENT] =
+        [0, 1, 3, 1, 2, 3];
+    
+    pub fn byte_size() -> usize {
+        size_of::<ColoredSegmentVertex>()
+    }
+    
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: size_of::<ColoredSegmentVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
@@ -42,7 +53,7 @@ impl ColoredSegmentVertex {
         }
     }
 
-    fn new(segment: Segment2f, color: Color, pixel_width: NonZeroU8) -> [Self; 4] {
+    pub fn new(segment: Segment2f, color: Color, pixel_width: NonZeroU8) -> [Self; 4] {
         let origin = segment.origin().into();
         let destination = segment.destination().into();
         let left_normal = segment.left_normal()

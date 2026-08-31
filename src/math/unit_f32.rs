@@ -17,6 +17,10 @@ pub struct UnitF32 {
 }
 
 impl UnitF32 {
+    pub const ZERO: Self = Self { value: 0.0 };
+
+    pub const ONE: Self = Self { value: 1.0 };
+
     pub fn new(value: f32) -> Result<Self, NonUnitF32Error> {
         if value < 0.0 || value > 1.0 { Err(NonUnitF32Error { value }) }
         else { Ok(Self { value }) }
