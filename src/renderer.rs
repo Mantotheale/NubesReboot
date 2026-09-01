@@ -6,6 +6,9 @@ use wgpu::CurrentSurfaceTexture;
 use crate::color::Color;
 use crate::constants;
 use crate::engine::{InitializationError};
+use crate::math::point2f::Point2f;
+use crate::math::positive_f32::PositiveF32;
+use crate::math::segment::Segment2f;
 use crate::math::unit_f32::UnitF32;
 use crate::renderer::segment::ColoredSegmentVertex;
 
@@ -63,8 +66,10 @@ pub struct IdleRenderer {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
+    config: wgpu::SurfaceConfiguration,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+    screen_dimensions_buffer: wgpu::Buffer,
     screen_dimensions_bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
     clear_color: Color
@@ -142,7 +147,7 @@ impl IdleRenderer {
         let mut indices = Vec::new();
         for n in 0..constants::MAX_SEGMENTS_BATCH {
             for idx in ColoredSegmentVertex::PRIMITIVE_INDICES {
-                let base_idx = n * ColoredSegmentVertex::INDICES_PER_SEGMENT;
+                let base_idx = n * ColoredSegmentVertex::VERTICES_PER_SEGMENT;
                 indices.push((base_idx + idx) as u32);
             }
         }
@@ -151,7 +156,7 @@ impl IdleRenderer {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../resources/shaders/simple_shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../resources/shaders/colored_line_shader.wgsl").into()),
         });
 
         let screen_dimensions_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -160,6 +165,8 @@ impl IdleRenderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+
+        queue.write_buffer(&screen_dimensions_buffer, 0, bytemuck::cast_slice(&[window_size.width, window_size.height]));
 
         let screen_dimensions_binding_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -214,10 +221,7 @@ impl IdleRenderer {
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent::REPLACE,
-                        alpha: wgpu::BlendComponent::REPLACE,
-                    }),
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
@@ -245,8 +249,10 @@ impl IdleRenderer {
             surface,
             device,
             queue,
+            config,
             vertex_buffer,
             index_buffer,
+            screen_dimensions_buffer,
             screen_dimensions_bind_group,
             pipeline: render_pipeline,
             clear_color: Color::SOLID_BLACK
@@ -257,8 +263,8 @@ impl IdleRenderer {
         self.clear_color = color;
     }
 
-    fn begin_scene(self) -> Result<InProgressRenderer, BeginSceneError> {
-        let output = match self.surface.get_current_texture() {
+    pub fn begin_scene(&mut self) -> Result<InProgressRenderer, BeginSceneError> {
+        let surface_texture = match self.surface.get_current_texture() {
             CurrentSurfaceTexture::Success(t) | CurrentSurfaceTexture::Suboptimal(t) => t,
             CurrentSurfaceTexture::Timeout => return Err(BeginSceneError::FrameTimeoutError),
             CurrentSurfaceTexture::Occluded => return Err(BeginSceneError::OccludedSurfaceError),
@@ -267,9 +273,51 @@ impl IdleRenderer {
             CurrentSurfaceTexture::Lost => return Err(BeginSceneError::LostSurfaceError)
         };
 
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        Ok(InProgressRenderer {
+            renderer: self,
+            surface_texture
+        })
+    }
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+    pub fn resize(&mut self, width: u32, height: u32) {
+        if width > 0 && height > 0 {
+            self.config.width = width;
+            self.config.height = height;
+            self.surface.configure(&self.device, &self.config);
+        }
+
+        self.queue.write_buffer(
+            &self.screen_dimensions_buffer, 0, bytemuck::cast_slice(&[width, height])
+        );
+    }
+}
+
+pub struct InProgressRenderer<'a> {
+    renderer: &'a IdleRenderer,
+    surface_texture: wgpu::SurfaceTexture
+}
+
+impl<'a> InProgressRenderer<'a> {
+    pub fn add_line(&mut self, line: Line, fill: Fill, pixel_width: NonZeroU8) {
+
+    }
+
+    pub fn add_triangle(&mut self, triangle: Triangle, fill: Fill) {
+
+    }
+
+    pub fn add_square(&mut self, square: Square, fill: Fill) {
+
+    }
+
+    pub fn add_circle(&mut self, circle: Circle, fill: Fill) {
+
+    }
+
+    pub fn end_scene(self) {
+        let view = self.surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = self.renderer.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("render pass"),
@@ -279,7 +327,7 @@ impl IdleRenderer {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(self.clear_color.into()),
+                        load: wgpu::LoadOp::Clear(self.renderer.clear_color.into()),
                         store: wgpu::StoreOp::Store
                     },
                 })
@@ -290,76 +338,52 @@ impl IdleRenderer {
             multiview_mask: None,
         });
 
-        Ok(InProgressRenderer {
-            device: self.device,
-            queue: self.queue,
-            vertex_buffer: self.vertex_buffer,
-            index_buffer: self.index_buffer,
-            screen_dimensions_bind_group: self.screen_dimensions_bind_group,
-            pipeline: self.pipeline,
-            render_pass
-        })
-    }
+        render_pass.set_pipeline(&self.renderer.pipeline);
 
-    fn resize(&mut self) {
+        let segment = Segment2f::new(
+            Point2f::new(-0.5, -0.5), Point2f::new(0.0, 0.5), constants::MATH_EPSILON
+        ).expect("Valid segment");
 
-    }
+        let color = Color::new(
+            UnitF32::new(0.5).expect("Valid color channel"),
+            UnitF32::new(0.5).expect("Valid color channel"),
+            UnitF32::new(0.5).expect("Valid color channel"),
+            UnitF32::ONE
+        );
 
-    fn swap_buffers(&self) {
+        let pixel_width = PositiveF32::new(5.0).expect("Positive number");
 
-    }
-}
+        let colored_segment_vertices_1 = ColoredSegmentVertex::generate(segment, color, pixel_width);
 
-struct InProgressRenderer {
-    surface: wgpu::Surface<'static>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    screen_dimensions_bind_group: wgpu::BindGroup,
-    pipeline: wgpu::RenderPipeline,
-    clear_color: Color,
+        let segment = Segment2f::new(
+            Point2f::new(0.0, 0.5), Point2f::new(0.5, -0.5), constants::MATH_EPSILON
+        ).expect("Valid segment");
 
-}
+        let color = Color::new(
+            UnitF32::new(0.7).expect("Valid color channel"),
+            UnitF32::new(0.2).expect("Valid color channel"),
+            UnitF32::new(0.3).expect("Valid color channel"),
+            UnitF32::ONE
+        );
 
-impl InProgressRenderer {
-    fn add_line(&mut self, line: Line, fill: Fill, pixel_width: NonZeroU8) {
+        let pixel_width = PositiveF32::new(7.0).expect("Positive number");
 
-    }
+        let colored_segment_vertices_2 = ColoredSegmentVertex::generate(segment, color, pixel_width);
 
-    fn add_triangle(&mut self, triangle: Triangle, fill: Fill) {
+        self.renderer.queue.write_buffer(
+            &self.renderer.vertex_buffer,
+            0,
+            bytemuck::cast_slice(&[colored_segment_vertices_1, colored_segment_vertices_2].concat())
+        );
 
-    }
-
-    fn add_square(&mut self, square: Square, fill: Fill) {
-
-    }
-
-    fn add_circle(&mut self, circle: Circle, fill: Fill) {
-
-    }
-
-    fn end_scene(self) -> IdleRenderer {
-
-        render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.as_wgpu_buffer().slice(..));
-        render_pass.set_index_buffer(self.index_buffer.as_wgpu_buffer().slice(..), self.index_buffer.format().wgpu_format());
-        render_pass.set_bind_group(0, self.texture_sampler.wgpu_bind_group(), &[]);
-        render_pass.set_bind_group(1, self.texture.wgpu_bind_group(), &[]);
-        render_pass.draw_indexed(0..6, 0, 0..1);
+        render_pass.set_vertex_buffer(0, self.renderer.vertex_buffer.slice(..));
+        render_pass.set_index_buffer(self.renderer.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        render_pass.set_bind_group(0, &self.renderer.screen_dimensions_bind_group, &[]);
+        render_pass.draw_indexed(0..12, 0, 0..1);
         drop(render_pass);
 
         let command_buffer = encoder.finish();
-        self.queue.submit(std::iter::once(command_buffer));
-        self.queue.present(output);
-
-        IdleRenderer {
-            device: self.device,
-            queue: self.queue,
-            vertex_buffer: self.vertex_buffer,
-            index_buffer: self.index_buffer,
-            screen_dimensions_bind_group: self.screen_dimensions_bind_group,
-            pipeline: self.pipeline
-        }
+        self.renderer.queue.submit(std::iter::once(command_buffer));
+        self.renderer.queue.present(self.surface_texture);
     }
 }

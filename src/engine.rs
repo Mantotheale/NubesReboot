@@ -7,6 +7,7 @@ use winit::event_loop::EventLoopProxy;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
 use crate::index_buffer::IndexBuffer;
+use crate::renderer::IdleRenderer;
 use crate::shader::Shader;
 use crate::texture::{Texture, TextureSampler};
 use crate::vertex_buffer::{VertexAttribute, VertexBuffer, VertexBufferLayout};
@@ -46,7 +47,7 @@ pub struct LostSurfaceError { }
 pub struct Engine {
     proxy: EventLoopProxy<()>,
     window: Arc<Window>,
-    surface: wgpu::Surface<'static>,
+    /*surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
@@ -54,11 +55,12 @@ pub struct Engine {
     vertex_buffer: VertexBuffer,
     index_buffer: IndexBuffer,
     texture: Texture,
-    texture_sampler: TextureSampler,
+    texture_sampler: TextureSampler,*/
     next_update: Instant,
     next_one_sec_update: Instant,
     update_duration: Duration,
-    one_sec_duration: Duration
+    one_sec_duration: Duration,
+    renderer: IdleRenderer
 }
 
 impl Engine {
@@ -69,7 +71,7 @@ impl Engine {
 
         let window = Arc::new(window);
 
-        let instance = wgpu::Instance::new(
+        /*let instance = wgpu::Instance::new(
             wgpu::InstanceDescriptor::new_with_display_handle(
                 Box::new(window.clone())
             )
@@ -190,7 +192,8 @@ impl Engine {
             }),
             multiview_mask: None,
             cache: None,
-        });
+        });*/
+        let renderer = IdleRenderer::new(window.clone()).await.expect("Should not panic");
 
         let now = Instant::now();
         let update_duration = Duration::from_nanos(1_000_000_000 / 60);
@@ -199,7 +202,7 @@ impl Engine {
         Ok(Self {
             proxy,
             window,
-            surface,
+            /*surface,
             device,
             queue,
             config,
@@ -207,17 +210,20 @@ impl Engine {
             vertex_buffer,
             index_buffer,
             texture,
-            texture_sampler,
+            texture_sampler,*/
             next_update: now + update_duration,
             next_one_sec_update: now + one_sec_duration,
             update_duration,
-            one_sec_duration
+            one_sec_duration,
+            renderer
         })
     }
 
     pub fn window_event(&mut self, event: winit::event::WindowEvent) {
         match event {
             WindowEvent::CloseRequested => _ = self.proxy.send_event(()),
+            WindowEvent::RedrawRequested => _ = self.render(),
+            WindowEvent::Resized(size) => self.renderer.resize(size.width, size.height),
             WindowEvent::KeyboardInput {
                 event: KeyEvent {
                     physical_key: PhysicalKey::Code(code),
@@ -246,7 +252,10 @@ impl Engine {
     fn render(&mut self) -> Result<(), LostSurfaceError> {
         self.window.request_redraw();
 
-        let output = match self.surface.get_current_texture() {
+        let scene_renderer = self.renderer.begin_scene().expect("Should not panic");
+        scene_renderer.end_scene();
+
+        /*let output = match self.surface.get_current_texture() {
             CurrentSurfaceTexture::Success(t) | CurrentSurfaceTexture::Suboptimal(t) => t,
             CurrentSurfaceTexture::Timeout |
             CurrentSurfaceTexture::Occluded |
@@ -296,7 +305,7 @@ impl Engine {
 
         let command_buffer = encoder.finish();
         self.queue.submit(std::iter::once(command_buffer));
-        self.queue.present(output);
+        self.queue.present(output);*/
 
         Ok(())
     }

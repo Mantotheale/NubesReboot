@@ -1,6 +1,6 @@
-use std::num::NonZeroU8;
 use crate::color::Color;
 use crate::constants::MATH_EPSILON;
+use crate::math::positive_f32::PositiveF32;
 use crate::math::segment::Segment2f;
 
 #[repr(C)]
@@ -8,7 +8,7 @@ use crate::math::segment::Segment2f;
 pub struct ColoredSegmentVertex {
     position: [f32; 2],
     normal: [f32; 2],
-    pixel_width: u32,
+    pixel_width: f32,
     color: [f32; 4]
 }
 
@@ -40,12 +40,12 @@ impl ColoredSegmentVertex {
                     format: wgpu::VertexFormat::Float32x2,
                 },
                 wgpu::VertexAttribute {
-                    offset: 2 * size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    offset: size_of::<[f32; 4]>() as wgpu::BufferAddress,
                     shader_location: 2,
-                    format: wgpu::VertexFormat::Uint32,
+                    format: wgpu::VertexFormat::Float32,
                 },
                 wgpu::VertexAttribute {
-                    offset: (2 * size_of::<[f32; 2]>() + size_of::<u32>()) as wgpu::BufferAddress,
+                    offset: size_of::<[f32; 5]>() as wgpu::BufferAddress,
                     shader_location: 3,
                     format: wgpu::VertexFormat::Float32x4,
                 },
@@ -53,7 +53,7 @@ impl ColoredSegmentVertex {
         }
     }
 
-    pub fn new(segment: Segment2f, color: Color, pixel_width: NonZeroU8) -> [Self; 4] {
+    pub fn generate(segment: Segment2f, color: Color, pixel_width: PositiveF32) -> [Self; 4] {
         let origin = segment.origin().into();
         let destination = segment.destination().into();
         let left_normal = segment.left_normal()
@@ -69,28 +69,28 @@ impl ColoredSegmentVertex {
         let bottom_left = Self {
             position: origin,
             normal: right_normal,
-            pixel_width: pixel_width.get() as u32,
+            pixel_width: pixel_width.value(),
             color
         };
 
         let bottom_right = Self {
             position: destination,
             normal: right_normal,
-            pixel_width: pixel_width.get() as u32,
+            pixel_width: pixel_width.value(),
             color
         };
 
         let top_right = Self {
             position: destination,
             normal: left_normal,
-            pixel_width: pixel_width.get() as u32,
+            pixel_width: pixel_width.value(),
             color
         };
 
         let top_left = Self {
             position: origin,
             normal: left_normal,
-            pixel_width: pixel_width.get() as u32,
+            pixel_width: pixel_width.value(),
             color
         };
 
