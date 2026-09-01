@@ -8,6 +8,7 @@ pub struct TexturedSegmentVertex {
     position: [f32; 2],
     normal: [f32; 2],
     pixel_width: f32,
+    tex_coords: [f32; 2],
 }
 
 impl TexturedSegmentVertex {
@@ -41,6 +42,11 @@ impl TexturedSegmentVertex {
                     offset: size_of::<[f32; 4]>() as wgpu::BufferAddress,
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float32,
+                },
+                wgpu::VertexAttribute {
+                    offset: size_of::<[f32; 5]>() as wgpu::BufferAddress,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32x2,
                 }
             ],
         }
@@ -57,29 +63,34 @@ impl TexturedSegmentVertex {
             .normalized(MATH_EPSILON)
             .expect("A segment length is always positive")
             .into();
+        let len = segment.len();
 
         let bottom_left = Self {
             position: origin,
             normal: right_normal,
             pixel_width: pixel_width.value(),
+            tex_coords: [0.0, 0.0]
         };
 
         let bottom_right = Self {
             position: destination,
             normal: right_normal,
             pixel_width: pixel_width.value(),
+            tex_coords: [len, 0.0]
         };
 
         let top_right = Self {
             position: destination,
             normal: left_normal,
             pixel_width: pixel_width.value(),
+            tex_coords: [len, 1.0]
         };
 
         let top_left = Self {
             position: origin,
             normal: left_normal,
             pixel_width: pixel_width.value(),
+            tex_coords: [0.0, 1.0]
         };
 
         [bottom_left, bottom_right, top_right, top_left]

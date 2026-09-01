@@ -75,9 +75,9 @@ pub struct IdleRenderer {
     textured_segment_index_buffer: wgpu::Buffer,
     screen_dimensions_buffer: wgpu::Buffer,
     screen_dimensions_bind_group: wgpu::BindGroup,
+    textured_segment_bind_group: wgpu::BindGroup,
     colored_segment_pipeline: wgpu::RenderPipeline,
     textured_segment_pipeline: wgpu::RenderPipeline,
-    textured_segment_bind_group: wgpu::RenderPipeline,
     clear_color: Color
 }
 
@@ -252,6 +252,49 @@ impl IdleRenderer {
             ..Default::default()
         });
 
+        let image_bytes = include_bytes!("../resources/tiles/dotted_line.png");
+        let image = image::load_from_memory(image_bytes)
+            .expect("The image is fine")
+            .flipv();
+        let image_rgba = image.as_rgba8().expect("The image contains rgba channels");
+
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: image.width(),
+                height: image.height(),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            image_rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(image.width() * 4),
+                rows_per_image: Some(image.height()),
+            },
+            wgpu::Extent3d {
+                width: image.width(),
+                height: image.height(),
+                depth_or_array_layers: 1,
+            }
+        );
+
+        let texture_view: wgpu::TextureView = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
         let textured_segment_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &textured_segment_binding_layout,
             entries: &[
@@ -261,13 +304,13 @@ impl IdleRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&())
+                    resource: wgpu::BindingResource::TextureView(&texture_view)
                 },
             ],
             label: None,
         });
 
-        let render_pipeline_layout =
+        let colored_segment_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: None,
                 bind_group_layouts: &[Some(&screen_dimensions_binding_layout)],
@@ -276,7 +319,7 @@ impl IdleRenderer {
 
         let colored_segment_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
-            layout: Some(&render_pipeline_layout),
+            layout: Some(&colored_segment_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &colored_segment_shader,
                 entry_point: Some("vs_main"),
@@ -312,16 +355,68 @@ impl IdleRenderer {
             cache: None,
         });
 
+        let textured_segment_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: None,
+                bind_group_layouts: &[
+                    Some(&screen_dimensions_binding_layout),
+                    Some(&textured_segment_binding_layout)
+                ],
+                immediate_size: 0,
+            });
+
+        let textured_segment_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: None,
+            layout: Some(&textured_segment_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &textured_segment_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Some(TexturedSegmentVertex::desc())],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &textured_segment_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview_mask: None,
+            cache: None,
+        });
+
         Ok(Self {
             surface,
             device,
             queue,
             config,
             colored_segment_vertex_buffer,
-            colored_segment_index_buffer,
+            colored_segment_index_buffer: colored_segment_index_buffer.clone(),
+            textured_segment_vertex_buffer,
+            textured_segment_index_buffer: colored_segment_index_buffer,
             screen_dimensions_buffer,
             screen_dimensions_bind_group,
+            textured_segment_bind_group,
             colored_segment_pipeline,
+            textured_segment_pipeline,
             clear_color: Color::SOLID_BLACK
         })
     }
@@ -405,16 +500,14 @@ impl<'a> InProgressRenderer<'a> {
             multiview_mask: None,
         });
 
-        render_pass.set_pipeline(&self.renderer.colored_segment_pipeline);
-
         let segment = Segment2f::new(
             Point2f::new(-0.5, -0.5), Point2f::new(0.0, 0.5), constants::MATH_EPSILON
         ).expect("Valid segment");
 
         let color = Color::new(
-            UnitF32::new(0.5).expect("Valid color channel"),
-            UnitF32::new(0.5).expect("Valid color channel"),
-            UnitF32::new(0.5).expect("Valid color channel"),
+            UnitF32::new(0.3).expect("Valid color channel"),
+            UnitF32::new(0.7).expect("Valid color channel"),
+            UnitF32::new(0.1).expect("Valid color channel"),
             UnitF32::ONE
         );
 
@@ -443,10 +536,33 @@ impl<'a> InProgressRenderer<'a> {
             bytemuck::cast_slice(&[colored_segment_vertices_1, colored_segment_vertices_2].concat())
         );
 
+        render_pass.set_pipeline(&self.renderer.colored_segment_pipeline);
         render_pass.set_vertex_buffer(0, self.renderer.colored_segment_vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.renderer.colored_segment_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         render_pass.set_bind_group(0, &self.renderer.screen_dimensions_bind_group, &[]);
         render_pass.draw_indexed(0..12, 0, 0..1);
+
+        let segment = Segment2f::new(
+            Point2f::new(-0.5, -0.5), Point2f::new(0.5, -0.5), constants::MATH_EPSILON
+        ).expect("Valid segment");
+
+        let pixel_width = PositiveF32::new(2.0).expect("Positive number");
+
+        let textured_segment_vertices = TexturedSegmentVertex::generate(segment, pixel_width);
+
+        self.renderer.queue.write_buffer(
+            &self.renderer.textured_segment_vertex_buffer,
+            0,
+            bytemuck::cast_slice(&textured_segment_vertices)
+        );
+
+        render_pass.set_pipeline(&self.renderer.textured_segment_pipeline);
+        render_pass.set_vertex_buffer(0, self.renderer.textured_segment_vertex_buffer.slice(..));
+        render_pass.set_index_buffer(self.renderer.textured_segment_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        render_pass.set_bind_group(0, &self.renderer.screen_dimensions_bind_group, &[]);
+        render_pass.set_bind_group(1, &self.renderer.textured_segment_bind_group, &[]);
+        render_pass.draw_indexed(0..6, 0, 0..1);
+
         drop(render_pass);
 
         let command_buffer = encoder.finish();

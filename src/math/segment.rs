@@ -45,6 +45,10 @@ impl Segment2f {
         self.destination - self.origin
     }
     
+    pub fn len(&self) -> f32 {
+        self.origin.distance(&self.destination)    
+    }
+    
     pub fn left_normal(&self) -> Vec2f {
         self.direction().left_normal()
     }

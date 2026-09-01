@@ -6,7 +6,9 @@ use winit::event::{KeyEvent, WindowEvent};
 use winit::event_loop::EventLoopProxy;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
+use crate::color::Color;
 use crate::index_buffer::IndexBuffer;
+use crate::math::unit_f32::UnitF32;
 use crate::renderer::IdleRenderer;
 use crate::shader::Shader;
 use crate::texture::{Texture, TextureSampler};
@@ -193,7 +195,13 @@ impl Engine {
             multiview_mask: None,
             cache: None,
         });*/
-        let renderer = IdleRenderer::new(window.clone()).await.expect("Should not panic");
+        let mut renderer = IdleRenderer::new(window.clone()).await.expect("Should not panic");
+        renderer.set_clear_color(Color::new(
+            UnitF32::new(0.2).expect("Valid color channel"),
+            UnitF32::new(0.2).expect("Valid color channel"),
+            UnitF32::new(0.2).expect("Valid color channel"),
+            UnitF32::ONE
+        ));
 
         let now = Instant::now();
         let update_duration = Duration::from_nanos(1_000_000_000 / 60);

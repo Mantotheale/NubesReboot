@@ -22,6 +22,15 @@ impl Point2f {
     pub fn y(&self) -> f32 {
         self.y
     }
+    
+    pub fn squared_distance(&self, other: &Self) -> f32 {
+        let dx = self.x - other.x;
+        let dy = self.y - other.y;
+        dx * dx + dy * dy
+    }
+    pub fn distance(&self, other: &Self) -> f32 {
+        self.squared_distance(other).sqrt()
+    }
 }
 
 impl Add for Point2f {
