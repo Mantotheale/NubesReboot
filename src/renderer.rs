@@ -1,4 +1,5 @@
-mod segment;
+mod colored_segment;
+mod textured_segment;
 
 use std::num::NonZeroU8;
 use std::sync::Arc;
@@ -10,7 +11,8 @@ use crate::math::point2f::Point2f;
 use crate::math::positive_f32::PositiveF32;
 use crate::math::segment::Segment2f;
 use crate::math::unit_f32::UnitF32;
-use crate::renderer::segment::ColoredSegmentVertex;
+use crate::renderer::colored_segment::ColoredSegmentVertex;
+use crate::renderer::textured_segment::TexturedSegmentVertex;
 
 #[derive(Debug)]
 pub enum BeginSceneError {
@@ -67,11 +69,15 @@ pub struct IdleRenderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
+    colored_segment_vertex_buffer: wgpu::Buffer,
+    colored_segment_index_buffer: wgpu::Buffer,
+    textured_segment_vertex_buffer: wgpu::Buffer,
+    textured_segment_index_buffer: wgpu::Buffer,
     screen_dimensions_buffer: wgpu::Buffer,
     screen_dimensions_bind_group: wgpu::BindGroup,
-    pipeline: wgpu::RenderPipeline,
+    colored_segment_pipeline: wgpu::RenderPipeline,
+    textured_segment_pipeline: wgpu::RenderPipeline,
+    textured_segment_bind_group: wgpu::RenderPipeline,
     clear_color: Color
 }
 
@@ -130,33 +136,45 @@ impl IdleRenderer {
 
         surface.configure(&device, &config);
 
-        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        let colored_segment_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: (constants::MAX_SEGMENTS_BATCH * ColoredSegmentVertex::byte_size() * ColoredSegmentVertex::VERTICES_PER_SEGMENT) as wgpu::BufferAddress,
+            size: (constants::SEGMENTS_MAX_BATCH_SIZE * ColoredSegmentVertex::byte_size() * ColoredSegmentVertex::VERTICES_PER_SEGMENT) as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        let colored_segment_index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: (constants::MAX_SEGMENTS_BATCH * ColoredSegmentVertex::INDICES_PER_SEGMENT * size_of::<u32>()) as wgpu::BufferAddress,
+            size: (constants::SEGMENTS_MAX_BATCH_SIZE * ColoredSegmentVertex::INDICES_PER_SEGMENT * size_of::<u32>()) as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let mut indices = Vec::new();
-        for n in 0..constants::MAX_SEGMENTS_BATCH {
+        for n in 0..constants::SEGMENTS_MAX_BATCH_SIZE {
             for idx in ColoredSegmentVertex::PRIMITIVE_INDICES {
                 let base_idx = n * ColoredSegmentVertex::VERTICES_PER_SEGMENT;
                 indices.push((base_idx + idx) as u32);
             }
         }
 
-        queue.write_buffer(&index_buffer, 0, bytemuck::cast_slice(&indices));
+        queue.write_buffer(&colored_segment_index_buffer, 0, bytemuck::cast_slice(&indices));
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        let colored_segment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../resources/shaders/colored_line_shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../resources/shaders/colored_segment_shader.wgsl").into()),
+        });
+
+        let textured_segment_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: (constants::SEGMENTS_MAX_BATCH_SIZE * TexturedSegmentVertex::byte_size() * TexturedSegmentVertex::VERTICES_PER_SEGMENT) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let textured_segment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../resources/shaders/textured_segment_shader.wgsl").into()),
         });
 
         let screen_dimensions_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -200,6 +218,55 @@ impl IdleRenderer {
             label: None,
         });
 
+        let textured_segment_binding_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                ],
+                label: None,
+            });
+
+        let textured_segment_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: None,
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let textured_segment_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &textured_segment_binding_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Sampler(&textured_segment_sampler)
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&())
+                },
+            ],
+            label: None,
+        });
+
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: None,
@@ -207,17 +274,17 @@ impl IdleRenderer {
                 immediate_size: 0,
             });
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let colored_segment_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &shader,
+                module: &colored_segment_shader,
                 entry_point: Some("vs_main"),
                 buffers: &[Some(ColoredSegmentVertex::desc())],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader,
+                module: &colored_segment_shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
@@ -250,11 +317,11 @@ impl IdleRenderer {
             device,
             queue,
             config,
-            vertex_buffer,
-            index_buffer,
+            colored_segment_vertex_buffer,
+            colored_segment_index_buffer,
             screen_dimensions_buffer,
             screen_dimensions_bind_group,
-            pipeline: render_pipeline,
+            colored_segment_pipeline,
             clear_color: Color::SOLID_BLACK
         })
     }
@@ -263,7 +330,7 @@ impl IdleRenderer {
         self.clear_color = color;
     }
 
-    pub fn begin_scene(&mut self) -> Result<InProgressRenderer, BeginSceneError> {
+    pub fn begin_scene(&mut self) -> Result<InProgressRenderer<'_>, BeginSceneError> {
         let surface_texture = match self.surface.get_current_texture() {
             CurrentSurfaceTexture::Success(t) | CurrentSurfaceTexture::Suboptimal(t) => t,
             CurrentSurfaceTexture::Timeout => return Err(BeginSceneError::FrameTimeoutError),
@@ -338,7 +405,7 @@ impl<'a> InProgressRenderer<'a> {
             multiview_mask: None,
         });
 
-        render_pass.set_pipeline(&self.renderer.pipeline);
+        render_pass.set_pipeline(&self.renderer.colored_segment_pipeline);
 
         let segment = Segment2f::new(
             Point2f::new(-0.5, -0.5), Point2f::new(0.0, 0.5), constants::MATH_EPSILON
@@ -371,13 +438,13 @@ impl<'a> InProgressRenderer<'a> {
         let colored_segment_vertices_2 = ColoredSegmentVertex::generate(segment, color, pixel_width);
 
         self.renderer.queue.write_buffer(
-            &self.renderer.vertex_buffer,
+            &self.renderer.colored_segment_vertex_buffer,
             0,
             bytemuck::cast_slice(&[colored_segment_vertices_1, colored_segment_vertices_2].concat())
         );
 
-        render_pass.set_vertex_buffer(0, self.renderer.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(self.renderer.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        render_pass.set_vertex_buffer(0, self.renderer.colored_segment_vertex_buffer.slice(..));
+        render_pass.set_index_buffer(self.renderer.colored_segment_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         render_pass.set_bind_group(0, &self.renderer.screen_dimensions_bind_group, &[]);
         render_pass.draw_indexed(0..12, 0, 0..1);
         drop(render_pass);
