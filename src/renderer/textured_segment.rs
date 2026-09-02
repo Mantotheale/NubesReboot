@@ -1,6 +1,6 @@
 use crate::constants::MATH_EPSILON;
 use crate::math::positive_f32::PositiveF32;
-use crate::math::segment::Segment2f;
+use crate::math::segment2f::Segment2f;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -20,12 +20,12 @@ impl TexturedSegmentVertex {
         [0, 1, 3, 1, 2, 3];
 
     pub fn byte_size() -> usize {
-        size_of::<TexturedSegmentVertex>()
+        size_of::<Self>()
     }
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
-            array_stride: size_of::<TexturedSegmentVertex>() as wgpu::BufferAddress,
+            array_stride: size_of::<Self>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
                 wgpu::VertexAttribute {
@@ -52,7 +52,7 @@ impl TexturedSegmentVertex {
         }
     }
 
-    pub fn generate(segment: Segment2f, pixel_width: PositiveF32) -> [Self; 4] {
+    pub fn generate(segment: Segment2f, pixel_width: PositiveF32) -> [Self; Self::VERTICES_PER_SEGMENT] {
         let origin = segment.origin().into();
         let destination = segment.destination().into();
         let left_normal = segment.left_normal()

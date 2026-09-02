@@ -1,5 +1,6 @@
 mod colored_segment;
 mod textured_segment;
+mod colored_rect;
 
 use std::num::NonZeroU8;
 use std::sync::Arc;
@@ -9,8 +10,10 @@ use crate::constants;
 use crate::engine::{InitializationError};
 use crate::math::point2f::Point2f;
 use crate::math::positive_f32::PositiveF32;
-use crate::math::segment::Segment2f;
+use crate::math::rect2f::Rect2f;
+use crate::math::segment2f::Segment2f;
 use crate::math::unit_f32::UnitF32;
+use crate::renderer::colored_rect::ColoredRectVertex;
 use crate::renderer::colored_segment::ColoredSegmentVertex;
 use crate::renderer::textured_segment::TexturedSegmentVertex;
 
@@ -73,11 +76,14 @@ pub struct IdleRenderer {
     colored_segment_index_buffer: wgpu::Buffer,
     textured_segment_vertex_buffer: wgpu::Buffer,
     textured_segment_index_buffer: wgpu::Buffer,
+    colored_rect_vertex_buffer: wgpu::Buffer,
+    colored_rect_index_buffer: wgpu::Buffer,
     screen_dimensions_buffer: wgpu::Buffer,
     screen_dimensions_bind_group: wgpu::BindGroup,
     textured_segment_bind_group: wgpu::BindGroup,
     colored_segment_pipeline: wgpu::RenderPipeline,
     textured_segment_pipeline: wgpu::RenderPipeline,
+    colored_rect_pipeline: wgpu::RenderPipeline,
     clear_color: Color
 }
 
@@ -161,7 +167,7 @@ impl IdleRenderer {
         queue.write_buffer(&colored_segment_index_buffer, 0, bytemuck::cast_slice(&indices));
 
         let colored_segment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
+            label: None,
             source: wgpu::ShaderSource::Wgsl(include_str!("../resources/shaders/colored_segment_shader.wgsl").into()),
         });
 
@@ -172,9 +178,38 @@ impl IdleRenderer {
             mapped_at_creation: false,
         });
 
+        let colored_rect_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: (constants::SEGMENTS_MAX_BATCH_SIZE * ColoredRectVertex::byte_size() * ColoredRectVertex::VERTICES_PER_SEGMENT) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let colored_rect_index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: (constants::RECTS_MAX_BATCH_SIZE * ColoredRectVertex::INDICES_PER_SEGMENT * size_of::<u32>()) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut indices = Vec::new();
+        for n in 0..constants::RECTS_MAX_BATCH_SIZE {
+            for idx in ColoredRectVertex::PRIMITIVE_INDICES {
+                let base_idx = n * ColoredRectVertex::VERTICES_PER_SEGMENT;
+                indices.push((base_idx + idx) as u32);
+            }
+        }
+
+        queue.write_buffer(&colored_rect_index_buffer, 0, bytemuck::cast_slice(&indices));
+
         let textured_segment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
+            label: None,
             source: wgpu::ShaderSource::Wgsl(include_str!("../resources/shaders/textured_segment_shader.wgsl").into()),
+        });
+
+        let colored_rect_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(include_str!("../resources/shaders/colored_rect_shader.wgsl").into()),
         });
 
         let screen_dimensions_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -403,6 +438,51 @@ impl IdleRenderer {
             cache: None,
         });
 
+        let colored_rect_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: None,
+                bind_group_layouts: &[],
+                immediate_size: 0,
+            });
+
+        let colored_rect_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: None,
+            layout: Some(&colored_rect_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &colored_rect_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Some(ColoredRectVertex::desc())],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &colored_rect_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview_mask: None,
+            cache: None,
+        });
+
         Ok(Self {
             surface,
             device,
@@ -412,11 +492,14 @@ impl IdleRenderer {
             colored_segment_index_buffer: colored_segment_index_buffer.clone(),
             textured_segment_vertex_buffer,
             textured_segment_index_buffer: colored_segment_index_buffer,
+            colored_rect_vertex_buffer,
+            colored_rect_index_buffer,
             screen_dimensions_buffer,
             screen_dimensions_bind_group,
             textured_segment_bind_group,
             colored_segment_pipeline,
             textured_segment_pipeline,
+            colored_rect_pipeline,
             clear_color: Color::SOLID_BLACK
         })
     }
@@ -561,6 +644,32 @@ impl<'a> InProgressRenderer<'a> {
         render_pass.set_index_buffer(self.renderer.textured_segment_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         render_pass.set_bind_group(0, &self.renderer.screen_dimensions_bind_group, &[]);
         render_pass.set_bind_group(1, &self.renderer.textured_segment_bind_group, &[]);
+        render_pass.draw_indexed(0..6, 0, 0..1);
+
+        let rect = Rect2f::new(
+            Point2f::new(-0.5, 0.5),
+            PositiveF32::new(0.25).expect("Positive number"),
+            PositiveF32::new(0.25).expect("Positive number")
+        );
+
+        let color = Color::new(
+            UnitF32::new(0.4).expect("Valid color channel"),
+            UnitF32::new(0.1).expect("Valid color channel"),
+            UnitF32::new(0.7).expect("Valid color channel"),
+            UnitF32::ONE
+        );
+
+        let colored_rect_vertices = ColoredRectVertex::generate(rect, color);
+
+        self.renderer.queue.write_buffer(
+            &self.renderer.colored_rect_vertex_buffer,
+            0,
+            bytemuck::cast_slice(&colored_rect_vertices)
+        );
+
+        render_pass.set_pipeline(&self.renderer.colored_rect_pipeline);
+        render_pass.set_vertex_buffer(0, self.renderer.colored_rect_vertex_buffer.slice(..));
+        render_pass.set_index_buffer(self.renderer.colored_rect_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         render_pass.draw_indexed(0..6, 0, 0..1);
 
         drop(render_pass);

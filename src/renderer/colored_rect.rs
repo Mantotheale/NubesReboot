@@ -1,0 +1,50 @@
+use crate::color::Color;
+use crate::math::rect2f::Rect2f;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ColoredRectVertex {
+    position: [f32; 2],
+    color: [f32; 4],
+}
+
+impl ColoredRectVertex {
+    pub const VERTICES_PER_SEGMENT: usize = 4;
+
+    pub const INDICES_PER_SEGMENT: usize = 6;
+
+    pub const PRIMITIVE_INDICES: [usize; Self::INDICES_PER_SEGMENT] =
+        [0, 1, 3, 1, 2, 3];
+
+    pub fn byte_size() -> usize {
+        size_of::<Self>()
+    }
+
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        }
+    }
+
+    pub fn generate(rect: Rect2f, color: Color) -> [Self; Self::VERTICES_PER_SEGMENT] {
+        [
+            Self { position: rect.bottom_left().into(), color: color.into() },
+            Self { position: rect.bottom_right().into(), color: color.into() },
+            Self { position: rect.top_right().into(), color: color.into() },
+            Self { position: rect.top_left().into(), color: color.into() }
+        ]
+    }
+}
