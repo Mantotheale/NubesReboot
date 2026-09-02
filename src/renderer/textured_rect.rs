@@ -1,14 +1,16 @@
-use crate::color::Color;
+use crate::constants::MATH_EPSILON;
+use crate::math::positive_f32::PositiveF32;
 use crate::math::rect2f::Rect2f;
+use crate::math::segment2f::Segment2f;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct ColoredRectVertex {
+pub struct TexturedRectVertex {
     position: [f32; 2],
-    color: [f32; 4],
+    tex_coords: [f32; 2],
 }
 
-impl ColoredRectVertex {
+impl TexturedRectVertex {
     pub const VERTICES_PER_RECT: usize = 4;
 
     pub const INDICES_PER_RECT: usize = 6;
@@ -33,18 +35,18 @@ impl ColoredRectVertex {
                 wgpu::VertexAttribute {
                     offset: size_of::<[f32; 2]>() as wgpu::BufferAddress,
                     shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
+                    format: wgpu::VertexFormat::Float32x2,
+                }
             ],
         }
     }
 
-    pub fn generate(rect: Rect2f, color: Color) -> [Self; Self::VERTICES_PER_RECT] {
+    pub fn generate(rect: Rect2f) -> [Self; Self::VERTICES_PER_RECT] {
         [
-            Self { position: rect.bottom_left().into(), color: color.into() },
-            Self { position: rect.bottom_right().into(), color: color.into() },
-            Self { position: rect.top_right().into(), color: color.into() },
-            Self { position: rect.top_left().into(), color: color.into() }
+            Self { position: rect.bottom_left().into(), tex_coords: [0.0, 0.0] },
+            Self { position: rect.bottom_right().into(), tex_coords: [1.0, 0.0] },
+            Self { position: rect.top_right().into(), tex_coords: [1.0, 1.0] },
+            Self { position: rect.top_left().into(), tex_coords: [0.0, 1.0] }
         ]
     }
 }
