@@ -9,7 +9,7 @@ pub struct RectBatch {
     vertex_buffer: wgpu::Buffer,
     cpu_buffer: [u8; constants::RECTS_MAX_BATCH_SIZE * RectVertex::RECT_BYTE_SIZE],
     index_buffer: wgpu::Buffer,
-    texture_bind_group: Option<wgpu::BindGroup>,
+    texture_bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
 }
 
@@ -217,6 +217,135 @@ impl RectBatch {
                 ]
             });
 
+        let texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: None,
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let image_bytes = include_bytes!("../../resources/tiles/rock.png");
+        let image = image::load_from_memory(image_bytes)
+            .expect("The image is fine")
+            .flipv();
+        let image_rgba = image.as_rgba8().expect("The image contains rgba channels");
+
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: image.width(),
+                height: image.height(),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            image_rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(image.width() * 4),
+                rows_per_image: Some(image.height()),
+            },
+            wgpu::Extent3d {
+                width: image.width(),
+                height: image.height(),
+                depth_or_array_layers: 1,
+            }
+        );
+
+        let texture_view: wgpu::TextureView = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_binding_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Sampler(&texture_sampler)
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&texture_view)
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&texture_view)
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&texture_view)
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&texture_view)
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&texture_view)
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(&texture_view)
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: wgpu::BindingResource::TextureView(&texture_view)
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: wgpu::BindingResource::TextureView(&texture_view)
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: wgpu::BindingResource::TextureView(&texture_view)
+                },
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: wgpu::BindingResource::TextureView(&texture_view)
+                },
+                wgpu::BindGroupEntry {
+                    binding: 11,
+                    resource: wgpu::BindingResource::TextureView(&texture_view)
+                },
+                wgpu::BindGroupEntry {
+                    binding: 12,
+                    resource: wgpu::BindingResource::TextureView(&texture_view)
+                },
+                wgpu::BindGroupEntry {
+                    binding: 13,
+                    resource: wgpu::BindingResource::TextureView(&texture_view)
+                },
+                wgpu::BindGroupEntry {
+                    binding: 14,
+                    resource: wgpu::BindingResource::TextureView(&texture_view)
+                },
+                wgpu::BindGroupEntry {
+                    binding: 15,
+                    resource: wgpu::BindingResource::TextureView(&texture_view)
+                },
+                wgpu::BindGroupEntry {
+                    binding: 16,
+                    resource: wgpu::BindingResource::TextureView(&texture_view)
+                },
+            ],
+            label: None,
+        });
+
         let pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Rect batch pipeline layout"),
@@ -268,7 +397,7 @@ impl RectBatch {
             vertex_buffer,
             cpu_buffer: [0; constants::RECTS_MAX_BATCH_SIZE * RectVertex::RECT_BYTE_SIZE],
             index_buffer,
-            texture_bind_group: None,
+            texture_bind_group,
             pipeline
         }
     }
@@ -282,7 +411,11 @@ impl RectBatch {
                 self.cpu_buffer[insertion_idx..insertion_idx + RectVertex::RECT_BYTE_SIZE]
                     .copy_from_slice(bytemuck::cast_slice(&vertex_data));
             }
-            Fill::TextureView(_) => unimplemented!()
+            Fill::TextureView(_) => {
+                let vertex_data = RectVertex::from_textured_rect(rect, 0);
+                self.cpu_buffer[insertion_idx..insertion_idx + RectVertex::RECT_BYTE_SIZE]
+                    .copy_from_slice(bytemuck::cast_slice(&vertex_data));
+            }
         }
 
         self.inserted_rects += 1;
@@ -294,6 +427,7 @@ impl RectBatch {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
 
         render_pass.draw_indexed(
             0..(self.inserted_rects * RectVertex::INDICES_PER_RECT) as u32,

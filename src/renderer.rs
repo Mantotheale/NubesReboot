@@ -63,13 +63,9 @@ struct Circle {
 
 }
 
-struct TextureView {
-
-}
-
 enum Fill {
     Color(Color),
-    TextureView(TextureView)
+    TextureView(wgpu::TextureView)
 }
 
 pub struct IdleRenderer {
@@ -94,7 +90,8 @@ pub struct IdleRenderer {
     colored_rect_pipeline: wgpu::RenderPipeline,
     textured_rect_pipeline: wgpu::RenderPipeline,
     clear_color: Color,
-    rect_batch: RectBatch
+    rect_batch: RectBatch,
+    texture_view: wgpu::TextureView
 }
 
 impl IdleRenderer {
@@ -632,7 +629,8 @@ impl IdleRenderer {
             colored_rect_pipeline,
             textured_rect_pipeline,
             clear_color: Color::SOLID_BLACK,
-            rect_batch
+            rect_batch,
+            texture_view
         })
     }
 
@@ -848,6 +846,24 @@ impl<'a> InProgressRenderer<'a> {
             PositiveF32::new(0.2).expect("Positive number")
         );
 
+        let rect_5 = Rect2f::new(
+            Point2f::new(0.25, -0.75),
+            PositiveF32::new(0.2).expect("Positive number"),
+            PositiveF32::new(0.2).expect("Positive number")
+        );
+
+        let rect_6 = Rect2f::new(
+            Point2f::new(0.5, -0.75),
+            PositiveF32::new(0.2).expect("Positive number"),
+            PositiveF32::new(0.2).expect("Positive number")
+        );
+
+        let rect_7 = Rect2f::new(
+            Point2f::new(0.75, -0.75),
+            PositiveF32::new(0.2).expect("Positive number"),
+            PositiveF32::new(0.2).expect("Positive number")
+        );
+
         let white = Color::new(
             UnitF32::new(1.0).expect("Valid color channel"),
             UnitF32::new(1.0).expect("Valid color channel"),
@@ -866,7 +882,11 @@ impl<'a> InProgressRenderer<'a> {
         self.renderer.rect_batch.push(rect_2, Fill::Color(white));
         self.renderer.rect_batch.push(rect_3, Fill::Color(yellow));
         self.renderer.rect_batch.push(rect_4, Fill::Color(white));
+        self.renderer.rect_batch.push(rect_5, Fill::TextureView(self.renderer.texture_view.clone()));
+        self.renderer.rect_batch.push(rect_6, Fill::TextureView(self.renderer.texture_view.clone()));
+        self.renderer.rect_batch.push(rect_7, Fill::TextureView(self.renderer.texture_view.clone()));
         self.renderer.rect_batch.draw(&mut render_pass);
+
         self.renderer.rect_batch.clear();
 
         drop(render_pass);
