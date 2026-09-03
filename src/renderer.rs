@@ -2,6 +2,7 @@ mod colored_segment;
 mod textured_segment;
 mod colored_rect;
 mod textured_rect;
+mod rect_batch;
 mod rect;
 
 use std::num::NonZeroU8;
@@ -17,7 +18,7 @@ use crate::math::segment2f::Segment2f;
 use crate::math::unit_f32::UnitF32;
 use crate::renderer::colored_rect::ColoredRectVertex;
 use crate::renderer::colored_segment::ColoredSegmentVertex;
-use crate::renderer::rect::RectBatch;
+use crate::renderer::rect_batch::RectBatch;
 use crate::renderer::textured_rect::TexturedRectVertex;
 use crate::renderer::textured_segment::TexturedSegmentVertex;
 
@@ -189,7 +190,7 @@ impl IdleRenderer {
 
         let colored_rect_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: (constants::SEGMENTS_MAX_BATCH_SIZE * ColoredRectVertex::byte_size() * ColoredRectVertex::VERTICES_PER_RECT) as wgpu::BufferAddress,
+            size: (constants::SEGMENTS_MAX_BATCH_SIZE * ColoredRectVertex::BYTE_SIZE * ColoredRectVertex::VERTICES_PER_RECT) as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });

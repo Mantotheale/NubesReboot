@@ -13,12 +13,12 @@ impl ColoredRectVertex {
 
     pub const INDICES_PER_RECT: usize = 6;
 
+    pub const BYTE_SIZE: usize = size_of::<Self>();
+
+    pub const RECT_BYTE_SIZE: usize = Self::VERTICES_PER_RECT * Self::BYTE_SIZE;
+
     pub const PRIMITIVE_INDICES: [usize; Self::INDICES_PER_RECT] =
         [0, 1, 3, 1, 2, 3];
-
-    pub const fn byte_size() -> usize {
-        size_of::<Self>()
-    }
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {

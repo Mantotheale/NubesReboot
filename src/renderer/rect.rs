@@ -1,139 +1,111 @@
-use wgpu::RenderPass;
-use crate::constants;
+use crate::color::Color;
 use crate::math::rect2f::Rect2f;
-use crate::renderer::colored_rect::ColoredRectVertex;
-use crate::renderer::colored_segment::ColoredSegmentVertex;
-use crate::renderer::Fill;
 
-pub struct RectBatch {
-    batch: Vec<(Rect2f, Fill)>,
-    queue: wgpu::Queue,
-    vertex_buffer: wgpu::Buffer,
-    cpu_buffer: [u8; constants::RECTS_MAX_BATCH_SIZE * ColoredRectVertex::byte_size()],
-    index_buffer: wgpu::Buffer,
-    texture_bind_group: Option<wgpu::BindGroup>,
-    pipeline: wgpu::RenderPipeline,
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct RectVertex {
+    position: [f32; 2],
+    color: [f32; 4],
+    tex_coords: [f32; 2],
+    tex_index: i32
 }
 
-impl RectBatch {
-    pub fn new(device: wgpu::Device, queue: wgpu::Queue, surface_format: wgpu::TextureFormat) -> Self {
-        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Rect batch vertex buffer"),
-            size: (constants::RECTS_MAX_BATCH_SIZE * ColoredRectVertex::byte_size() * ColoredRectVertex::VERTICES_PER_RECT) as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+impl RectVertex {
+    pub const VERTICES_PER_RECT: usize = 4;
 
-        let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Rect batch index buffer"),
-            size: (constants::RECTS_MAX_BATCH_SIZE * ColoredRectVertex::INDICES_PER_RECT * size_of::<u32>()) as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+    pub const INDICES_PER_RECT: usize = 6;
 
-        let mut indices = Vec::new();
-        for n in 0..constants::RECTS_MAX_BATCH_SIZE {
-            for idx in ColoredRectVertex::PRIMITIVE_INDICES {
-                let base_idx = n * ColoredRectVertex::VERTICES_PER_RECT;
-                indices.push((base_idx + idx) as u32);
-            }
-        }
+    pub const BYTE_SIZE: usize = size_of::<Self>();
 
-        queue.write_buffer(&index_buffer, 0, bytemuck::cast_slice(&indices));
+    pub const RECT_BYTE_SIZE: usize = Self::VERTICES_PER_RECT * Self::BYTE_SIZE;
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Rect batch shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../../resources/shaders/rect_shader.wgsl").into()),
-        });
+    pub const PRIMITIVE_INDICES: [usize; Self::INDICES_PER_RECT] =
+        [0, 1, 3, 1, 2, 3];
 
-        let pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Rect batch pipeline layout"),
-                bind_group_layouts: &[],
-                immediate_size: 0,
-            });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Rect batch pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(ColoredRectVertex::desc())],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview_mask: None,
-            cache: None,
-        });
-
-        Self {
-            batch: Vec::new(),
-            queue,
-            vertex_buffer,
-            cpu_buffer: [0; constants::RECTS_MAX_BATCH_SIZE * ColoredRectVertex::byte_size()],
-            index_buffer,
-            texture_bind_group: None,
-            pipeline
-        }
-    }
-
-    pub fn push(&mut self, rect: Rect2f, fill: Fill) {
-        self.batch.push((rect, fill))
-    }
-
-    pub fn draw(&mut self, render_pass: &mut RenderPass) {
-        let mut cpu_buffer_idx = 0;
-        for (rect, fill) in &self.batch {
-            match fill {
-                Fill::Color(color) => {
-                    let vertex_data = ColoredRectVertex::generate(*rect, *color);
-                    self.cpu_buffer[cpu_buffer_idx..cpu_buffer_idx + ColoredRectVertex::VERTICES_PER_RECT * ColoredRectVertex::byte_size()].copy_from_slice(bytemuck::cast_slice(&vertex_data));
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: Self::BYTE_SIZE as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: size_of::<[f32; 6]>() as wgpu::BufferAddress,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Sint32,
                 }
-                Fill::TextureView(_) => unimplemented!()
-            }
-
-            cpu_buffer_idx += ColoredRectVertex::VERTICES_PER_RECT * ColoredRectVertex::byte_size();
+            ],
         }
-
-        self.queue.write_buffer(&self.vertex_buffer, 0, &self.cpu_buffer);
-
-        render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-
-        render_pass.draw_indexed(
-            0..(self.batch.len() * ColoredRectVertex::INDICES_PER_RECT) as u32,
-            0,
-            0..1
-        );
     }
 
-    pub fn clear(&mut self) {
-        self.batch.clear();
+    pub fn from_colored_rect(rect: Rect2f, color: Color) -> [Self; Self::VERTICES_PER_RECT] {
+        [
+            Self {
+                position: rect.bottom_left().into(),
+                color: color.into(),
+                tex_coords: [0.0, 0.0],
+                tex_index: -1
+            },
+            Self {
+                position: rect.bottom_right().into(),
+                color: color.into(),
+                tex_coords: [1.0, 0.0],
+                tex_index: -1
+            },
+            Self {
+                position: rect.top_right().into(),
+                color: color.into(),
+                tex_coords: [1.0, 1.0],
+                tex_index: -1
+            },
+            Self {
+                position: rect.top_left().into(),
+                color: color.into(),
+                tex_coords: [0.0, 1.0],
+                tex_index: -1
+            }
+        ]
+    }
+
+    pub fn from_textured_rect(rect: Rect2f, tex_idx: usize) -> [Self; Self::VERTICES_PER_RECT] {
+        [
+            Self {
+                position: rect.bottom_left().into(),
+                color: [0.0; 4],
+                tex_coords: [0.0, 0.0],
+                tex_index: tex_idx as i32
+            },
+            Self {
+                position: rect.bottom_right().into(),
+                color: [0.0; 4],
+                tex_coords: [1.0, 0.0],
+                tex_index: tex_idx as i32
+            },
+            Self {
+                position: rect.top_right().into(),
+                color: [0.0; 4],
+                tex_coords: [1.0, 1.0],
+                tex_index: tex_idx as i32
+            },
+            Self {
+                position: rect.top_left().into(),
+                color: [0.0; 4],
+                tex_coords: [0.0, 1.0],
+                tex_index: tex_idx as i32
+            }
+        ]
     }
 }
