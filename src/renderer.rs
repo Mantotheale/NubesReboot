@@ -2,6 +2,7 @@ mod colored_segment;
 mod textured_segment;
 mod colored_rect;
 mod textured_rect;
+mod rect;
 
 use std::num::NonZeroU8;
 use std::sync::Arc;
@@ -16,6 +17,7 @@ use crate::math::segment2f::Segment2f;
 use crate::math::unit_f32::UnitF32;
 use crate::renderer::colored_rect::ColoredRectVertex;
 use crate::renderer::colored_segment::ColoredSegmentVertex;
+use crate::renderer::rect::RectBatch;
 use crate::renderer::textured_rect::TexturedRectVertex;
 use crate::renderer::textured_segment::TexturedSegmentVertex;
 
@@ -90,7 +92,8 @@ pub struct IdleRenderer {
     textured_segment_pipeline: wgpu::RenderPipeline,
     colored_rect_pipeline: wgpu::RenderPipeline,
     textured_rect_pipeline: wgpu::RenderPipeline,
-    clear_color: Color
+    clear_color: Color,
+    rect_batch: RectBatch
 }
 
 impl IdleRenderer {
@@ -604,6 +607,8 @@ impl IdleRenderer {
             cache: None,
         });
 
+        let rect_batch = RectBatch::new(device.clone(), queue.clone(), config.format);
+
         Ok(Self {
             surface,
             device,
@@ -625,7 +630,8 @@ impl IdleRenderer {
             textured_segment_pipeline,
             colored_rect_pipeline,
             textured_rect_pipeline,
-            clear_color: Color::SOLID_BLACK
+            clear_color: Color::SOLID_BLACK,
+            rect_batch
         })
     }
 
@@ -663,7 +669,7 @@ impl IdleRenderer {
 }
 
 pub struct InProgressRenderer<'a> {
-    renderer: &'a IdleRenderer,
+    renderer: &'a mut IdleRenderer,
     surface_texture: wgpu::SurfaceTexture
 }
 
@@ -816,6 +822,51 @@ impl<'a> InProgressRenderer<'a> {
         render_pass.set_index_buffer(self.renderer.textured_rect_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         render_pass.set_bind_group(0, &self.renderer.textured_rect_bind_group, &[]);
         render_pass.draw_indexed(0..6, 0, 0..1);
+
+        let rect_1 = Rect2f::new(
+            Point2f::new(-0.75, -0.75),
+            PositiveF32::new(0.2).expect("Positive number"),
+            PositiveF32::new(0.2).expect("Positive number")
+        );
+
+        let rect_2 = Rect2f::new(
+            Point2f::new(-0.5, -0.75),
+            PositiveF32::new(0.2).expect("Positive number"),
+            PositiveF32::new(0.2).expect("Positive number")
+        );
+
+        let rect_3 = Rect2f::new(
+            Point2f::new(-0.25, -0.75),
+            PositiveF32::new(0.2).expect("Positive number"),
+            PositiveF32::new(0.2).expect("Positive number")
+        );
+
+        let rect_4 = Rect2f::new(
+            Point2f::new(0.0, -0.75),
+            PositiveF32::new(0.2).expect("Positive number"),
+            PositiveF32::new(0.2).expect("Positive number")
+        );
+
+        let white = Color::new(
+            UnitF32::new(1.0).expect("Valid color channel"),
+            UnitF32::new(1.0).expect("Valid color channel"),
+            UnitF32::new(1.0).expect("Valid color channel"),
+            UnitF32::ONE
+        );
+
+        let yellow = Color::new(
+            UnitF32::new(0.5).expect("Valid color channel"),
+            UnitF32::new(1.0).expect("Valid color channel"),
+            UnitF32::new(0.0).expect("Valid color channel"),
+            UnitF32::ONE
+        );
+
+        self.renderer.rect_batch.push(rect_1, Fill::Color(yellow));
+        self.renderer.rect_batch.push(rect_2, Fill::Color(white));
+        self.renderer.rect_batch.push(rect_3, Fill::Color(yellow));
+        self.renderer.rect_batch.push(rect_4, Fill::Color(white));
+        self.renderer.rect_batch.draw(&mut render_pass);
+        self.renderer.rect_batch.clear();
 
         drop(render_pass);
 

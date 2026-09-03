@@ -16,7 +16,7 @@ impl ColoredRectVertex {
     pub const PRIMITIVE_INDICES: [usize; Self::INDICES_PER_RECT] =
         [0, 1, 3, 1, 2, 3];
 
-    pub fn byte_size() -> usize {
+    pub const fn byte_size() -> usize {
         size_of::<Self>()
     }
 
