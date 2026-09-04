@@ -4,6 +4,8 @@ mod colored_rect;
 mod textured_rect;
 mod rect_batch;
 mod rect;
+mod tex_coords;
+mod texture;
 
 use std::num::NonZeroU8;
 use std::sync::Arc;
@@ -19,6 +21,8 @@ use crate::math::unit_f32::UnitF32;
 use crate::renderer::colored_rect::ColoredRectVertex;
 use crate::renderer::colored_segment::ColoredSegmentVertex;
 use crate::renderer::rect_batch::RectBatch;
+use crate::renderer::tex_coords::{RectTexCoords, TexCoords};
+use crate::renderer::texture::{Texture, TextureId};
 use crate::renderer::textured_rect::TexturedRectVertex;
 use crate::renderer::textured_segment::TexturedSegmentVertex;
 
@@ -65,7 +69,7 @@ struct Circle {
 
 enum Fill {
     Color(Color),
-    TextureView(wgpu::TextureView)
+    TextureView(Texture)
 }
 
 pub struct IdleRenderer {
@@ -91,7 +95,9 @@ pub struct IdleRenderer {
     textured_rect_pipeline: wgpu::RenderPipeline,
     clear_color: Color,
     rect_batch: RectBatch,
-    texture_view: wgpu::TextureView
+    reshiram_texture: Texture,
+    rock_texture: Texture,
+    mewtwo_texture: Texture
 }
 
 impl IdleRenderer {
@@ -607,6 +613,138 @@ impl IdleRenderer {
 
         let rect_batch = RectBatch::new(device.clone(), queue.clone(), config.format);
 
+        let image_bytes = include_bytes!("../resources/tiles/reshiram.png");
+        let image = image::load_from_memory(image_bytes)
+            .expect("The image is fine")
+            .flipv();
+        let image_rgba = image.as_rgba8().expect("The image contains rgba channels");
+
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: image.width(),
+                height: image.height(),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            image_rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(image.width() * 4),
+                rows_per_image: Some(image.height()),
+            },
+            wgpu::Extent3d {
+                width: image.width(),
+                height: image.height(),
+                depth_or_array_layers: 1,
+            }
+        );
+
+        let texture_view: wgpu::TextureView = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let reshiram_texture = Texture::new(TextureId::new(), texture_view, RectTexCoords::DEFAULT_COORDS);
+
+        let image_bytes = include_bytes!("../resources/tiles/mewtwo.png");
+        let image = image::load_from_memory(image_bytes)
+            .expect("The image is fine")
+            .flipv();
+        let image_rgba = image.as_rgba8().expect("The image contains rgba channels");
+
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: image.width(),
+                height: image.height(),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            image_rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(image.width() * 4),
+                rows_per_image: Some(image.height()),
+            },
+            wgpu::Extent3d {
+                width: image.width(),
+                height: image.height(),
+                depth_or_array_layers: 1,
+            }
+        );
+
+        let texture_view: wgpu::TextureView = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mewtwo_texture = Texture::new(TextureId::new(), texture_view, RectTexCoords::DEFAULT_COORDS);
+
+        let image_bytes = include_bytes!("../resources/tiles/rock.png");
+        let image = image::load_from_memory(image_bytes)
+            .expect("The image is fine")
+            .flipv();
+        let image_rgba = image.as_rgba8().expect("The image contains rgba channels");
+
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: image.width(),
+                height: image.height(),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            image_rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(image.width() * 4),
+                rows_per_image: Some(image.height()),
+            },
+            wgpu::Extent3d {
+                width: image.width(),
+                height: image.height(),
+                depth_or_array_layers: 1,
+            }
+        );
+
+        let texture_view: wgpu::TextureView = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let rock_texture = Texture::new(TextureId::new(), texture_view, RectTexCoords::DEFAULT_COORDS);
+
         Ok(Self {
             surface,
             device,
@@ -630,7 +768,9 @@ impl IdleRenderer {
             textured_rect_pipeline,
             clear_color: Color::SOLID_BLACK,
             rect_batch,
-            texture_view
+            reshiram_texture,
+            mewtwo_texture,
+            rock_texture
         })
     }
 
@@ -878,13 +1018,13 @@ impl<'a> InProgressRenderer<'a> {
             UnitF32::ONE
         );
 
-        self.renderer.rect_batch.push(rect_1, Fill::Color(yellow));
-        self.renderer.rect_batch.push(rect_2, Fill::Color(white));
-        self.renderer.rect_batch.push(rect_3, Fill::Color(yellow));
-        self.renderer.rect_batch.push(rect_4, Fill::Color(white));
-        self.renderer.rect_batch.push(rect_5, Fill::TextureView(self.renderer.texture_view.clone()));
-        self.renderer.rect_batch.push(rect_6, Fill::TextureView(self.renderer.texture_view.clone()));
-        self.renderer.rect_batch.push(rect_7, Fill::TextureView(self.renderer.texture_view.clone()));
+        self.renderer.rect_batch.push(rect_1, Fill::Color(yellow)).unwrap();
+        self.renderer.rect_batch.push(rect_2, Fill::Color(white)).unwrap();
+        self.renderer.rect_batch.push(rect_3, Fill::Color(yellow)).unwrap();
+        self.renderer.rect_batch.push(rect_4, Fill::Color(white)).unwrap();
+        self.renderer.rect_batch.push(rect_5, Fill::TextureView(self.renderer.reshiram_texture.clone())).unwrap();
+        self.renderer.rect_batch.push(rect_6, Fill::TextureView(self.renderer.mewtwo_texture.clone())).unwrap();
+        self.renderer.rect_batch.push(rect_7, Fill::TextureView(self.renderer.rock_texture.clone())).unwrap();
         self.renderer.rect_batch.draw(&mut render_pass);
 
         self.renderer.rect_batch.clear();

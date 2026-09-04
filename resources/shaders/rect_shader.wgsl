@@ -13,39 +13,39 @@ struct VertexOutput {
 };
 
 @group(0) @binding(0)
-var tex_sampler: sampler;
-@group(0) @binding(1)
 var tex0: texture_2d<f32>;
-@group(0) @binding(2)
+@group(0) @binding(1)
 var tex1: texture_2d<f32>;
-@group(0) @binding(3)
+@group(0) @binding(2)
 var tex2: texture_2d<f32>;
-@group(0) @binding(4)
+@group(0) @binding(3)
 var tex3: texture_2d<f32>;
-@group(0) @binding(5)
+@group(0) @binding(4)
 var tex4: texture_2d<f32>;
-@group(0) @binding(6)
+@group(0) @binding(5)
 var tex5: texture_2d<f32>;
-@group(0) @binding(7)
+@group(0) @binding(6)
 var tex6: texture_2d<f32>;
-@group(0) @binding(8)
+@group(0) @binding(7)
 var tex7: texture_2d<f32>;
-@group(0) @binding(9)
+@group(0) @binding(8)
 var tex8: texture_2d<f32>;
-@group(0) @binding(10)
+@group(0) @binding(9)
 var tex9: texture_2d<f32>;
-@group(0) @binding(11)
+@group(0) @binding(10)
 var tex10: texture_2d<f32>;
-@group(0) @binding(12)
+@group(0) @binding(11)
 var tex11: texture_2d<f32>;
-@group(0) @binding(13)
+@group(0) @binding(12)
 var tex12: texture_2d<f32>;
-@group(0) @binding(14)
+@group(0) @binding(13)
 var tex13: texture_2d<f32>;
-@group(0) @binding(15)
+@group(0) @binding(14)
 var tex14: texture_2d<f32>;
-@group(0) @binding(16)
+@group(0) @binding(15)
 var tex15: texture_2d<f32>;
+@group(0) @binding(16)
+var tex_sampler: sampler;
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {

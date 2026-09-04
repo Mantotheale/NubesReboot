@@ -1,5 +1,6 @@
 use crate::color::Color;
 use crate::math::rect2f::Rect2f;
+use crate::renderer::tex_coords::RectTexCoords;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -80,31 +81,31 @@ impl RectVertex {
         ]
     }
 
-    pub fn from_textured_rect(rect: Rect2f, tex_idx: usize) -> [Self; Self::VERTICES_PER_RECT] {
+    pub fn from_textured_rect(rect: Rect2f, tex_slot: usize, tex_coords: RectTexCoords) -> [Self; Self::VERTICES_PER_RECT] {
         [
             Self {
                 position: rect.bottom_left().into(),
                 color: [0.0; 4],
-                tex_coords: [0.0, 0.0],
-                tex_index: tex_idx as i32
+                tex_coords: tex_coords.bottom_left().into(),
+                tex_index: tex_slot as i32
             },
             Self {
                 position: rect.bottom_right().into(),
                 color: [0.0; 4],
-                tex_coords: [1.0, 0.0],
-                tex_index: tex_idx as i32
+                tex_coords: tex_coords.bottom_right().into(),
+                tex_index: tex_slot as i32
             },
             Self {
                 position: rect.top_right().into(),
                 color: [0.0; 4],
-                tex_coords: [1.0, 1.0],
-                tex_index: tex_idx as i32
+                tex_coords: tex_coords.top_right().into(),
+                tex_index: tex_slot as i32
             },
             Self {
                 position: rect.top_left().into(),
                 color: [0.0; 4],
-                tex_coords: [0.0, 1.0],
-                tex_index: tex_idx as i32
+                tex_coords: tex_coords.top_left().into(),
+                tex_index: tex_slot as i32
             }
         ]
     }
