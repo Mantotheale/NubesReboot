@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fmt::Pointer;
 use crate::constants;
 use crate::math::rect2f::Rect2f;
 use crate::renderer::Fill;
@@ -155,6 +154,7 @@ impl RectBatch {
 
 struct TexturePool {
     device: wgpu::Device,
+    selected_textures: HashMap<TextureId, usize>,
     bound_textures: HashMap<TextureId, usize>,
     texture_pool: [(TextureId, wgpu::TextureView); constants::TEXTURE_SLOTS],
     bind_group: wgpu::BindGroup,
@@ -197,29 +197,13 @@ impl TexturePool {
         let null_texture = null_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let null_id = TextureId::new();
 
-        let texture_pool = [
-            (null_id, null_texture.clone()),
-            (null_id, null_texture.clone()),
-            (null_id, null_texture.clone()),
-            (null_id, null_texture.clone()),
-            (null_id, null_texture.clone()),
-            (null_id, null_texture.clone()),
-            (null_id, null_texture.clone()),
-            (null_id, null_texture.clone()),
-            (null_id, null_texture.clone()),
-            (null_id, null_texture.clone()),
-            (null_id, null_texture.clone()),
-            (null_id, null_texture.clone()),
-            (null_id, null_texture.clone()),
-            (null_id, null_texture.clone()),
-            (null_id, null_texture.clone()),
-            (null_id, null_texture.clone()),
-        ];
+        let texture_pool = std::array::from_fn(|_| (null_id, null_texture.clone()));
 
         let bind_group = Self::gen_bind_group(&device, &group_layout, &texture_pool, &sampler);
 
         Self {
             device,
+            selected_textures: HashMap::new(),
             bound_textures: HashMap::new(),
             texture_pool,
             bind_group,
@@ -231,32 +215,49 @@ impl TexturePool {
     }
 
     fn push(&mut self, texture: Texture) -> Result<usize, TexturePoolFullError> {
-        if self.bound_textures.len() == constants::TEXTURE_SLOTS { Err(TexturePoolFullError { texture }) }
-        else {
-            match self.bound_textures.get(&texture.id()) {
-                Some(index) => Ok(*index),
-                None => {
-                    let index = self.bound_textures.len();
-                    self.texture_pool[index] = (texture.id(), texture.wgpu_texture().clone());
-                    self.bound_textures.insert(texture.id(), index);
-                    self.has_pool_changed = true;
-                    Ok(index)
-                }
+        if let Some(index) = self.selected_textures.get(&texture.id()) { return Ok(*index) }
+        if self.selected_textures.len() == constants::TEXTURE_SLOTS { return Err(TexturePoolFullError { texture }) }
+
+        if let Some(index) = self.bound_textures.get(&texture.id()) {
+            self.selected_textures.insert(texture.id(), *index);
+            return Ok(*index)
+        }
+
+        for i in 0..constants::TEXTURE_SLOTS {
+            let old_tex_id = self.texture_pool[i].0;
+            if self.texture_pool[i].0 == self.null_texture.0 {
+                self.texture_pool[i] = (texture.id(), texture.wgpu_texture().clone());
+                self.bound_textures.remove(&old_tex_id);
+                self.bound_textures.insert(texture.id(), i);
+                self.selected_textures.insert(texture.id(), i);
+                self.has_pool_changed = true;
+                return Ok(i);
             }
         }
+
+        for i in 0..constants::TEXTURE_SLOTS {
+            let old_tex_id = self.texture_pool[i].0;
+            if self.selected_textures.get(&old_tex_id).is_none() {
+                self.texture_pool[i] = (texture.id(), texture.wgpu_texture().clone());
+                self.bound_textures.remove(&old_tex_id);
+                self.bound_textures.insert(texture.id(), i);
+                self.selected_textures.insert(texture.id(), i);
+                self.has_pool_changed = true;
+                return Ok(i);
+            }
+        }
+
+        unreachable!()
     }
 
     fn reset(&mut self) {
-        self.bound_textures.clear();
-        for i in 0..constants::TEXTURE_SLOTS {
-            self.texture_pool[i] = self.null_texture.clone();
-        }
-        self.has_pool_changed = true;
+        self.selected_textures.clear();
     }
 
     fn get_bind_group(&mut self) -> &wgpu::BindGroup {
         if self.has_pool_changed {
             self.bind_group = Self::gen_bind_group(&self.device, &self.group_layout, &self.texture_pool, &self.sampler);
+            self.has_pool_changed = false;
         }
 
         &self.bind_group
@@ -339,7 +340,7 @@ impl std::fmt::Display for RectBatchPushError {
 impl std::error::Error for RectBatchPushError { }
 
 #[derive(Debug)]
-struct TexturePoolFullError {
+pub struct TexturePoolFullError {
     texture: Texture
 }
 
