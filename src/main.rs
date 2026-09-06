@@ -3,11 +3,6 @@ use crate::entry_point::EntryPoint;
 
 mod engine;
 mod entry_point;
-mod vertex_buffer;
-mod index_buffer;
-mod texture;
-mod shader;
-mod pipeline;
 mod renderer;
 mod math;
 mod color;

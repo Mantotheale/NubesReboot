@@ -1,7 +1,6 @@
 use std::ops::{Div, Mul};
 use crate::math::non_zero_f32::{NonZeroF32, ZeroF32Error};
 use crate::math::normalized_vec2f::NormalizedVec2f;
-use crate::math::point2f::Point2f;
 use crate::math::positive_f32::PositiveF32;
 
 #[derive(Copy, Clone)]

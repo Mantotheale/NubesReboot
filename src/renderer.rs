@@ -1,29 +1,26 @@
 mod colored_segment;
 mod textured_segment;
 mod colored_rect;
-mod textured_rect;
 mod rect_batch;
 mod rect;
 mod tex_coords;
 mod texture;
 
-use std::num::NonZeroU8;
+use std::cmp::Ordering;
+use std::path::{Path,};
 use std::sync::Arc;
 use wgpu::CurrentSurfaceTexture;
 use crate::color::Color;
 use crate::constants;
-use crate::engine::{InitializationError};
+use crate::engine::InitializationError;
 use crate::math::point2f::Point2f;
 use crate::math::positive_f32::PositiveF32;
 use crate::math::rect2f::Rect2f;
 use crate::math::segment2f::Segment2f;
 use crate::math::unit_f32::UnitF32;
-use crate::renderer::colored_rect::ColoredRectVertex;
 use crate::renderer::colored_segment::ColoredSegmentVertex;
 use crate::renderer::rect_batch::RectBatch;
-use crate::renderer::tex_coords::{RectTexCoords, TexCoords};
-use crate::renderer::texture::{Texture, TextureId};
-use crate::renderer::textured_rect::TexturedRectVertex;
+use crate::renderer::texture::{Texture};
 use crate::renderer::textured_segment::TexturedSegmentVertex;
 
 #[derive(Debug)]
@@ -51,25 +48,59 @@ impl std::fmt::Display for BeginSceneError {
 
 impl std::error::Error for BeginSceneError { }
 
-struct Line {
-
+enum Shape {
+    Rect(Rect2f),
+    Segment { segment: Segment2f, pixel_width: PositiveF32 }
 }
 
-struct Triangle {
-
+impl Shape {
+    fn draw_order(a: &Self, b: &Self) -> Ordering {
+        match a {
+            Shape::Rect(_) => match b {
+                Shape::Rect(_) => Ordering::Equal,
+                Shape::Segment { .. } => Ordering::Less
+            }
+            Shape::Segment { .. } => match b {
+                Shape::Rect(_) => Ordering::Greater,
+                Shape::Segment { .. } => Ordering::Equal
+            }
+        }
+    }
 }
 
-struct Square {
-
-}
-
-struct Circle {
-
-}
-
-enum Fill {
+#[derive(Clone)]
+pub enum Fill {
     Color(Color),
     TextureView(Texture)
+}
+
+impl Fill {
+    fn draw_order(a: &Self, b: &Self) -> Ordering {
+        match a {
+            Fill::Color(_) => match b {
+                Fill::Color(_) => Ordering::Equal,
+                Fill::TextureView(_) => Ordering::Less
+            }
+            Fill::TextureView(tex_a) => match b {
+                Fill::Color(_) => Ordering::Greater,
+                Fill::TextureView(tex_b) => Ord::cmp(&tex_a.id(), &tex_b.id())
+            }
+        }
+    }
+}
+
+struct RenderCommand {
+    shape: Shape,
+    fill: Fill,
+    z_index: i32
+}
+
+impl RenderCommand {
+    fn draw_order(a: &Self, b: &Self) -> Ordering {
+        Ord::cmp(&a.z_index, &b.z_index)
+            .then_with(|| Shape::draw_order(&a.shape, &b.shape))
+            .then_with(|| Fill::draw_order(&a.fill, &b.fill))
+    }
 }
 
 pub struct IdleRenderer {
@@ -81,20 +112,25 @@ pub struct IdleRenderer {
     colored_segment_index_buffer: wgpu::Buffer,
     textured_segment_vertex_buffer: wgpu::Buffer,
     textured_segment_index_buffer: wgpu::Buffer,
-    colored_rect_vertex_buffer: wgpu::Buffer,
-    colored_rect_index_buffer: wgpu::Buffer,
-    textured_rect_vertex_buffer: wgpu::Buffer,
-    textured_rect_index_buffer: wgpu::Buffer,
     screen_dimensions_buffer: wgpu::Buffer,
     screen_dimensions_bind_group: wgpu::BindGroup,
     textured_segment_bind_group: wgpu::BindGroup,
-    textured_rect_bind_group: wgpu::BindGroup,
     colored_segment_pipeline: wgpu::RenderPipeline,
     textured_segment_pipeline: wgpu::RenderPipeline,
-    colored_rect_pipeline: wgpu::RenderPipeline,
-    textured_rect_pipeline: wgpu::RenderPipeline,
     clear_color: Color,
     rect_batch: RectBatch,
+    rect_1: Rect2f,
+    rect_2: Rect2f,
+    rect_3: Rect2f,
+    rect_4: Rect2f,
+    rect_5: Rect2f,
+    rect_6: Rect2f,
+    rect_7: Rect2f,
+    rect_8: Rect2f,
+    rect_9: Rect2f,
+    white: Color,
+    yellow: Color,
+    color_1: Color,
     reshiram_texture: Texture,
     rock_texture: Texture,
     mewtwo_texture: Texture
@@ -191,50 +227,9 @@ impl IdleRenderer {
             mapped_at_creation: false,
         });
 
-        let colored_rect_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: (constants::SEGMENTS_MAX_BATCH_SIZE * ColoredRectVertex::BYTE_SIZE * ColoredRectVertex::VERTICES_PER_RECT) as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let colored_rect_index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: (constants::RECTS_MAX_BATCH_SIZE * ColoredRectVertex::INDICES_PER_RECT * size_of::<u32>()) as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let mut indices = Vec::new();
-        for n in 0..constants::RECTS_MAX_BATCH_SIZE {
-            for idx in ColoredRectVertex::PRIMITIVE_INDICES {
-                let base_idx = n * ColoredRectVertex::VERTICES_PER_RECT;
-                indices.push((base_idx + idx) as u32);
-            }
-        }
-
-        queue.write_buffer(&colored_rect_index_buffer, 0, bytemuck::cast_slice(&indices));
-
-        let textured_rect_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: (constants::RECTS_MAX_BATCH_SIZE * TexturedRectVertex::byte_size() * TexturedRectVertex::VERTICES_PER_RECT) as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
         let textured_segment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(include_str!("../resources/shaders/textured_segment_shader.wgsl").into()),
-        });
-
-        let colored_rect_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(include_str!("../resources/shaders/colored_rect_shader.wgsl").into()),
-        });
-
-        let textured_rect_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(include_str!("../resources/shaders/textured_rect_shader.wgsl").into()),
         });
 
         let screen_dimensions_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -370,64 +365,6 @@ impl IdleRenderer {
             label: None,
         });
 
-        let image_bytes = include_bytes!("../resources/tiles/reshiram.png");
-        let image = image::load_from_memory(image_bytes)
-            .expect("The image is fine")
-            .flipv();
-        let image_rgba = image.as_rgba8().expect("The image contains rgba channels");
-
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: None,
-            size: wgpu::Extent3d {
-                width: image.width(),
-                height: image.height(),
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            image_rgba,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(image.width() * 4),
-                rows_per_image: Some(image.height()),
-            },
-            wgpu::Extent3d {
-                width: image.width(),
-                height: image.height(),
-                depth_or_array_layers: 1,
-            }
-        );
-
-        let texture_view: wgpu::TextureView = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        let textured_rect_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &texture_binding_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Sampler(&texture_sampler)
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&texture_view)
-                },
-            ],
-            label: None,
-        });
-
         let colored_segment_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: None,
@@ -521,229 +458,87 @@ impl IdleRenderer {
             cache: None,
         });
 
-        let colored_rect_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: None,
-                bind_group_layouts: &[],
-                immediate_size: 0,
-            });
-
-        let colored_rect_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: None,
-            layout: Some(&colored_rect_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &colored_rect_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(ColoredRectVertex::desc())],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &colored_rect_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview_mask: None,
-            cache: None,
-        });
-
-        let textured_rect_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: None,
-                bind_group_layouts: &[Some(&texture_binding_layout)],
-                immediate_size: 0,
-            });
-
-        let textured_rect_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: None,
-            layout: Some(&textured_rect_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &textured_rect_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(TexturedRectVertex::desc())],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &textured_rect_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview_mask: None,
-            cache: None,
-        });
-
         let rect_batch = RectBatch::new(device.clone(), queue.clone(), config.format);
 
-        let image_bytes = include_bytes!("../resources/tiles/reshiram.png");
-        let image = image::load_from_memory(image_bytes)
-            .expect("The image is fine")
-            .flipv();
-        let image_rgba = image.as_rgba8().expect("The image contains rgba channels");
+        let reshiram_texture = Texture::from_path(Path::new("tiles/reshiram.png"), &device, &queue).unwrap();
+        let mewtwo_texture = Texture::from_path(Path::new("tiles/mewtwo.png"), &device, &queue).unwrap();
+        let rock_texture = Texture::from_path(Path::new("tiles/rock.png"), &device, &queue).unwrap();
 
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: None,
-            size: wgpu::Extent3d {
-                width: image.width(),
-                height: image.height(),
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            image_rgba,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(image.width() * 4),
-                rows_per_image: Some(image.height()),
-            },
-            wgpu::Extent3d {
-                width: image.width(),
-                height: image.height(),
-                depth_or_array_layers: 1,
-            }
+        let rect_1 = Rect2f::new(
+            Point2f::new(-0.75, -0.75),
+            PositiveF32::new(0.2).expect("Positive number"),
+            PositiveF32::new(0.2).expect("Positive number")
         );
 
-        let texture_view: wgpu::TextureView = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let reshiram_texture = Texture::new(TextureId::new(), texture_view, RectTexCoords::DEFAULT_COORDS);
-
-        let image_bytes = include_bytes!("../resources/tiles/mewtwo.png");
-        let image = image::load_from_memory(image_bytes)
-            .expect("The image is fine")
-            .flipv();
-        let image_rgba = image.as_rgba8().expect("The image contains rgba channels");
-
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: None,
-            size: wgpu::Extent3d {
-                width: image.width(),
-                height: image.height(),
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            image_rgba,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(image.width() * 4),
-                rows_per_image: Some(image.height()),
-            },
-            wgpu::Extent3d {
-                width: image.width(),
-                height: image.height(),
-                depth_or_array_layers: 1,
-            }
+        let rect_2 = Rect2f::new(
+            Point2f::new(-0.5, -0.75),
+            PositiveF32::new(0.2).expect("Positive number"),
+            PositiveF32::new(0.2).expect("Positive number")
         );
 
-        let texture_view: wgpu::TextureView = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let mewtwo_texture = Texture::new(TextureId::new(), texture_view, RectTexCoords::DEFAULT_COORDS);
-
-        let image_bytes = include_bytes!("../resources/tiles/rock.png");
-        let image = image::load_from_memory(image_bytes)
-            .expect("The image is fine")
-            .flipv();
-        let image_rgba = image.as_rgba8().expect("The image contains rgba channels");
-
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: None,
-            size: wgpu::Extent3d {
-                width: image.width(),
-                height: image.height(),
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            image_rgba,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(image.width() * 4),
-                rows_per_image: Some(image.height()),
-            },
-            wgpu::Extent3d {
-                width: image.width(),
-                height: image.height(),
-                depth_or_array_layers: 1,
-            }
+        let rect_3 = Rect2f::new(
+            Point2f::new(-0.25, -0.75),
+            PositiveF32::new(0.2).expect("Positive number"),
+            PositiveF32::new(0.2).expect("Positive number")
         );
 
-        let texture_view: wgpu::TextureView = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let rock_texture = Texture::new(TextureId::new(), texture_view, RectTexCoords::DEFAULT_COORDS);
+        let rect_4 = Rect2f::new(
+            Point2f::new(0.0, -0.75),
+            PositiveF32::new(0.2).expect("Positive number"),
+            PositiveF32::new(0.2).expect("Positive number")
+        );
+
+        let rect_5 = Rect2f::new(
+            Point2f::new(0.25, -0.75),
+            PositiveF32::new(0.2).expect("Positive number"),
+            PositiveF32::new(0.2).expect("Positive number")
+        );
+
+        let rect_6 = Rect2f::new(
+            Point2f::new(0.5, -0.75),
+            PositiveF32::new(0.2).expect("Positive number"),
+            PositiveF32::new(0.2).expect("Positive number")
+        );
+
+        let rect_7 = Rect2f::new(
+            Point2f::new(0.75, -0.75),
+            PositiveF32::new(0.2).expect("Positive number"),
+            PositiveF32::new(0.2).expect("Positive number")
+        );
+
+        let rect_8 = Rect2f::new(
+            Point2f::new(-0.5, 0.5),
+            PositiveF32::new(0.25).expect("Positive number"),
+            PositiveF32::new(0.25).expect("Positive number")
+        );
+
+        let rect_9 = Rect2f::new(
+            Point2f::new(0.5, 0.5),
+            PositiveF32::new(0.25).expect("Positive number"),
+            PositiveF32::new(0.25).expect("Positive number")
+        );
+
+        let white = Color::new(
+            UnitF32::new(1.0).expect("Valid color channel"),
+            UnitF32::new(1.0).expect("Valid color channel"),
+            UnitF32::new(1.0).expect("Valid color channel"),
+            UnitF32::ONE
+        );
+
+        let yellow = Color::new(
+            UnitF32::new(0.5).expect("Valid color channel"),
+            UnitF32::new(1.0).expect("Valid color channel"),
+            UnitF32::new(0.0).expect("Valid color channel"),
+            UnitF32::ONE
+        );
+
+        let color_1 = Color::new(
+            UnitF32::new(0.4).expect("Valid color channel"),
+            UnitF32::new(0.1).expect("Valid color channel"),
+            UnitF32::new(0.7).expect("Valid color channel"),
+            UnitF32::ONE
+        );
+
 
         Ok(Self {
             surface,
@@ -754,23 +549,28 @@ impl IdleRenderer {
             colored_segment_index_buffer: colored_segment_index_buffer.clone(),
             textured_segment_vertex_buffer,
             textured_segment_index_buffer: colored_segment_index_buffer,
-            colored_rect_vertex_buffer,
-            colored_rect_index_buffer: colored_rect_index_buffer.clone(),
-            textured_rect_vertex_buffer,
-            textured_rect_index_buffer: colored_rect_index_buffer,
             screen_dimensions_buffer,
             screen_dimensions_bind_group,
             textured_segment_bind_group,
-            textured_rect_bind_group,
             colored_segment_pipeline,
             textured_segment_pipeline,
-            colored_rect_pipeline,
-            textured_rect_pipeline,
             clear_color: Color::SOLID_BLACK,
             rect_batch,
             reshiram_texture,
             mewtwo_texture,
-            rock_texture
+            rock_texture,
+            rect_1,
+            rect_2,
+            rect_3,
+            rect_4,
+            rect_5,
+            rect_6,
+            rect_7,
+            rect_8,
+            rect_9,
+            white,
+            yellow,
+            color_1
         })
     }
 
@@ -790,7 +590,8 @@ impl IdleRenderer {
 
         Ok(InProgressRenderer {
             renderer: self,
-            surface_texture
+            surface_texture,
+            render_commands: Vec::new()
         })
     }
 
@@ -809,27 +610,28 @@ impl IdleRenderer {
 
 pub struct InProgressRenderer<'a> {
     renderer: &'a mut IdleRenderer,
-    surface_texture: wgpu::SurfaceTexture
+    surface_texture: wgpu::SurfaceTexture,
+    render_commands: Vec<RenderCommand>
 }
 
 impl<'a> InProgressRenderer<'a> {
-    pub fn add_line(&mut self, line: Line, fill: Fill, pixel_width: NonZeroU8) {
-
+    pub fn add_segment(&mut self, segment: Segment2f, fill: Fill, pixel_width: PositiveF32, z_index: i32) {
+        self.render_commands.push(RenderCommand {
+            shape: Shape::Segment { segment, pixel_width },
+            fill,
+            z_index,
+        })
     }
 
-    pub fn add_triangle(&mut self, triangle: Triangle, fill: Fill) {
-
+    pub fn add_rect(&mut self, rect: Rect2f, fill: Fill, z_index: i32) {
+        self.render_commands.push(RenderCommand {
+            shape: Shape::Rect(rect),
+            fill,
+            z_index,
+        })
     }
 
-    pub fn add_square(&mut self, square: Square, fill: Fill) {
-
-    }
-
-    pub fn add_circle(&mut self, circle: Circle, fill: Fill) {
-
-    }
-
-    pub fn end_scene(self) {
+    pub fn end_scene(mut self) {
         let view = self.surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let mut encoder = self.renderer.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
@@ -916,117 +718,31 @@ impl<'a> InProgressRenderer<'a> {
         render_pass.set_bind_group(1, &self.renderer.textured_segment_bind_group, &[]);
         render_pass.draw_indexed(0..6, 0, 0..1);
 
-        let rect = Rect2f::new(
-            Point2f::new(-0.5, 0.5),
-            PositiveF32::new(0.25).expect("Positive number"),
-            PositiveF32::new(0.25).expect("Positive number")
-        );
+        self.add_rect(self.renderer.rect_1, Fill::Color(self.renderer.yellow), 1);
+        self.add_rect(self.renderer.rect_2, Fill::Color(self.renderer.white), 1);
+        self.add_rect(self.renderer.rect_3, Fill::Color(self.renderer.yellow), 1);
+        self.add_rect(self.renderer.rect_4, Fill::Color(self.renderer.white), 1);
+        self.add_rect(self.renderer.rect_5, Fill::TextureView(self.renderer.reshiram_texture.clone()), 1);
+        self.add_rect(self.renderer.rect_6, Fill::TextureView(self.renderer.mewtwo_texture.clone()), 1);
+        self.add_rect(self.renderer.rect_7, Fill::TextureView(self.renderer.rock_texture.clone()), 1);
+        self.add_rect(self.renderer.rect_8, Fill::Color(self.renderer.color_1), 1);
+        self.add_rect(self.renderer.rect_9, Fill::TextureView(self.renderer.reshiram_texture.clone()), 1);
 
-        let color = Color::new(
-            UnitF32::new(0.4).expect("Valid color channel"),
-            UnitF32::new(0.1).expect("Valid color channel"),
-            UnitF32::new(0.7).expect("Valid color channel"),
-            UnitF32::ONE
-        );
-
-        let colored_rect_vertices = ColoredRectVertex::generate(rect, color);
-
-        self.renderer.queue.write_buffer(
-            &self.renderer.colored_rect_vertex_buffer,
-            0,
-            bytemuck::cast_slice(&colored_rect_vertices)
-        );
-
-        render_pass.set_pipeline(&self.renderer.colored_rect_pipeline);
-        render_pass.set_vertex_buffer(0, self.renderer.colored_rect_vertex_buffer.slice(..));
-        render_pass.set_index_buffer(self.renderer.colored_rect_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        render_pass.draw_indexed(0..6, 0, 0..1);
-
-        let rect = Rect2f::new(
-            Point2f::new(0.5, 0.5),
-            PositiveF32::new(0.25).expect("Positive number"),
-            PositiveF32::new(0.25).expect("Positive number")
-        );
-
-        let textured_rect_vertices = TexturedRectVertex::generate(rect);
-
-        self.renderer.queue.write_buffer(
-            &self.renderer.textured_rect_vertex_buffer,
-            0,
-            bytemuck::cast_slice(&textured_rect_vertices)
-        );
-
-        render_pass.set_pipeline(&self.renderer.textured_rect_pipeline);
-        render_pass.set_vertex_buffer(0, self.renderer.textured_rect_vertex_buffer.slice(..));
-        render_pass.set_index_buffer(self.renderer.textured_rect_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        render_pass.set_bind_group(0, &self.renderer.textured_rect_bind_group, &[]);
-        render_pass.draw_indexed(0..6, 0, 0..1);
-
-        let rect_1 = Rect2f::new(
-            Point2f::new(-0.75, -0.75),
-            PositiveF32::new(0.2).expect("Positive number"),
-            PositiveF32::new(0.2).expect("Positive number")
-        );
-
-        let rect_2 = Rect2f::new(
-            Point2f::new(-0.5, -0.75),
-            PositiveF32::new(0.2).expect("Positive number"),
-            PositiveF32::new(0.2).expect("Positive number")
-        );
-
-        let rect_3 = Rect2f::new(
-            Point2f::new(-0.25, -0.75),
-            PositiveF32::new(0.2).expect("Positive number"),
-            PositiveF32::new(0.2).expect("Positive number")
-        );
-
-        let rect_4 = Rect2f::new(
-            Point2f::new(0.0, -0.75),
-            PositiveF32::new(0.2).expect("Positive number"),
-            PositiveF32::new(0.2).expect("Positive number")
-        );
-
-        let rect_5 = Rect2f::new(
-            Point2f::new(0.25, -0.75),
-            PositiveF32::new(0.2).expect("Positive number"),
-            PositiveF32::new(0.2).expect("Positive number")
-        );
-
-        let rect_6 = Rect2f::new(
-            Point2f::new(0.5, -0.75),
-            PositiveF32::new(0.2).expect("Positive number"),
-            PositiveF32::new(0.2).expect("Positive number")
-        );
-
-        let rect_7 = Rect2f::new(
-            Point2f::new(0.75, -0.75),
-            PositiveF32::new(0.2).expect("Positive number"),
-            PositiveF32::new(0.2).expect("Positive number")
-        );
-
-        let white = Color::new(
-            UnitF32::new(1.0).expect("Valid color channel"),
-            UnitF32::new(1.0).expect("Valid color channel"),
-            UnitF32::new(1.0).expect("Valid color channel"),
-            UnitF32::ONE
-        );
-
-        let yellow = Color::new(
-            UnitF32::new(0.5).expect("Valid color channel"),
-            UnitF32::new(1.0).expect("Valid color channel"),
-            UnitF32::new(0.0).expect("Valid color channel"),
-            UnitF32::ONE
-        );
-
-        self.renderer.rect_batch.push(rect_1, Fill::Color(yellow)).unwrap();
-        self.renderer.rect_batch.push(rect_2, Fill::Color(white)).unwrap();
-        self.renderer.rect_batch.push(rect_3, Fill::Color(yellow)).unwrap();
-        self.renderer.rect_batch.push(rect_4, Fill::Color(white)).unwrap();
-        self.renderer.rect_batch.push(rect_5, Fill::TextureView(self.renderer.reshiram_texture.clone())).unwrap();
-        self.renderer.rect_batch.push(rect_6, Fill::TextureView(self.renderer.mewtwo_texture.clone())).unwrap();
-        self.renderer.rect_batch.push(rect_7, Fill::TextureView(self.renderer.rock_texture.clone())).unwrap();
+        self.render_commands.sort_by(|a, b| RenderCommand::draw_order(a, b));
+        for command in self.render_commands {
+            match command.shape {
+                Shape::Rect(rect) => {
+                    let res = self.renderer.rect_batch.push(rect, command.fill.clone());
+                    if res.is_err() {
+                        self.renderer.rect_batch.draw(&mut render_pass);
+                        self.renderer.rect_batch.clear();
+                        self.renderer.rect_batch.push(rect, command.fill).expect("The batch is now empty");
+                    }
+                }
+                Shape::Segment { .. } => unimplemented!()
+            }
+        }
         self.renderer.rect_batch.draw(&mut render_pass);
-
         self.renderer.rect_batch.clear();
 
         drop(render_pass);

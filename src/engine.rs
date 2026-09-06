@@ -1,37 +1,11 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use wgpu::{CurrentSurfaceTexture, IndexFormat};
-use wgpu::util::DeviceExt;
-use winit::event::{KeyEvent, WindowEvent};
-use winit::event_loop::EventLoopProxy;
-use winit::keyboard::{KeyCode, PhysicalKey};
-use winit::window::Window;
 use crate::color::Color;
-use crate::index_buffer::IndexBuffer;
 use crate::math::unit_f32::UnitF32;
 use crate::renderer::IdleRenderer;
-use crate::shader::Shader;
-use crate::texture::{Texture, TextureSampler};
-use crate::vertex_buffer::{VertexAttribute, VertexBuffer, VertexBufferLayout};
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    tex_coords: [f32; 2]
-}
-
-const VERTICES: &[Vertex] = &[
-    Vertex { position: [-0.5, -0.5, 0.0], tex_coords: [0.0, 0.0] },
-    Vertex { position: [0.5, -0.5, 0.0], tex_coords: [1.0, 0.0] },
-    Vertex { position: [0.5, 0.5, 0.0], tex_coords: [1.0, 1.0] },
-    Vertex { position: [-0.5, 0.5, 0.0], tex_coords: [0.0, 1.0] },
-];
-
-const INDICES: &[u32] = &[
-    0, 1, 3,
-    1, 2, 3
-];
+#[derive(Debug)]
+pub struct LostSurfaceError { }
 
 #[derive(Debug)]
 pub enum InitializationError {
@@ -39,25 +13,11 @@ pub enum InitializationError {
     AdapterError(wgpu::RequestAdapterError),
     RequestDeviceError(wgpu::RequestDeviceError),
     NoSRGBSurface,
-    CantLoadImageError(image::ImageError),
-    CantLoadRGBAError
 }
 
-#[derive(Debug)]
-pub struct LostSurfaceError { }
-
 pub struct Engine {
-    proxy: EventLoopProxy<()>,
-    window: Arc<Window>,
-    /*surface: wgpu::Surface<'static>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
-    pipeline: wgpu::RenderPipeline,
-    vertex_buffer: VertexBuffer,
-    index_buffer: IndexBuffer,
-    texture: Texture,
-    texture_sampler: TextureSampler,*/
+    proxy: winit::event_loop::EventLoopProxy<()>,
+    window: Arc<winit::window::Window>,
     next_update: Instant,
     next_one_sec_update: Instant,
     update_duration: Duration,
@@ -66,135 +26,13 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub async fn new(proxy: EventLoopProxy<()>, event_loop: &winit::event_loop::ActiveEventLoop) -> Result<Self, InitializationError> {
-        let window_attributes = Window::default_attributes();
+    pub async fn new(proxy: winit::event_loop::EventLoopProxy<()>, event_loop: &winit::event_loop::ActiveEventLoop) -> Result<Self, InitializationError> {
+        let window_attributes = winit::window::Window::default_attributes();
         let window = event_loop.create_window(window_attributes)
             .expect("Couldn't create a window");
 
         let window = Arc::new(window);
 
-        /*let instance = wgpu::Instance::new(
-            wgpu::InstanceDescriptor::new_with_display_handle(
-                Box::new(window.clone())
-            )
-        );
-        println!("{:?}", instance);
-
-        let surface = instance.create_surface(window.clone())
-            .map_err(|err| InitializationError::CreateSurfaceError(err))?;
-        println!("{:?}", surface);
-
-        let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            force_fallback_adapter: false,
-            compatible_surface: Some(&surface),
-            apply_limit_buckets: true,
-        }).await.map_err(|err| InitializationError::AdapterError(err))?;
-        println!("{:?}", adapter);
-        println!("CIAO");
-
-        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
-            label: None,
-            required_features: wgpu::Features::empty(),
-            required_limits: Default::default(),
-            experimental_features: Default::default(),
-            memory_hints: Default::default(),
-            trace: Default::default(),
-        }).await.map_err(|err| InitializationError::RequestDeviceError(err))?;
-
-        let surface_caps = surface.get_capabilities(&adapter);
-        println!("{:?}", surface_caps);
-
-        let surface_format = *surface_caps.formats.iter()
-            .find(|f| f.is_srgb())
-            .ok_or(InitializationError::NoSRGBSurface)?;
-        println!("Surface format\n{:?}", surface_format);
-
-        let window_size = window.inner_size();
-
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface_format,
-            color_space: wgpu::SurfaceColorSpace::Auto,
-            width: window_size.width,
-            height: window_size.height,
-            present_mode: wgpu::PresentMode::AutoNoVsync,
-            desired_maximum_frame_latency: 2,
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            view_formats: vec![],
-        };
-
-        surface.configure(&device, &config);
-
-        let vertex_buffer_layout = VertexBufferLayout::new(&[
-            VertexAttribute::Float3, VertexAttribute::Float2
-        ]);
-        let vertex_buffer = VertexBuffer::new(device.clone(), vertex_buffer_layout, bytemuck::cast_slice(VERTICES));
-
-        let index_buffer = IndexBuffer::new_u32(&device, INDICES);
-
-        let shader = Shader::new(
-            &device,
-            include_str!("../resources/shaders/simple_shader.wgsl"),
-            "vs_main",
-            "fs_main",
-            vertex_buffer.layout()
-        );
-
-        let image_bytes = include_bytes!("../resources/tiles/reshiram.png");
-        let image = image::load_from_memory(image_bytes)
-            .map_err(|err| InitializationError::CantLoadImageError(err))?
-            .flipv();
-        let image_rgba = image.as_rgba8().ok_or(InitializationError::CantLoadRGBAError)?;
-
-        let texture = Texture::new(&device, &queue, image.width() as usize, image.height() as usize, image_rgba);
-        let texture_sampler = TextureSampler::default_sampler(&device);
-
-        let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[
-                    Some(TextureSampler::wgpu_layout(&device)),
-                    Some(Texture::wgpu_layout(&device))
-                ],
-                immediate_size: 0,
-            });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("render pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: shader.module(),
-                entry_point: Some(shader.vertex_entry_point()),
-                compilation_options: Default::default(),
-                buffers: &[
-                    Some(shader.vertex_layout().wgpu_layout())
-                ],
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                unclipped_depth: false,
-                polygon_mode: Default::default(),
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: Default::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: shader.module(),
-                entry_point: Some(shader.fragment_entry_point()),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::all(),
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });*/
         let mut renderer = IdleRenderer::new(window.clone()).await.expect("Should not panic");
         renderer.set_clear_color(Color::new(
             UnitF32::new(0.2).expect("Valid color channel"),
@@ -210,15 +48,6 @@ impl Engine {
         Ok(Self {
             proxy,
             window,
-            /*surface,
-            device,
-            queue,
-            config,
-            pipeline,
-            vertex_buffer,
-            index_buffer,
-            texture,
-            texture_sampler,*/
             next_update: now + update_duration,
             next_one_sec_update: now + one_sec_duration,
             update_duration,
@@ -229,16 +58,16 @@ impl Engine {
 
     pub fn window_event(&mut self, event: winit::event::WindowEvent) {
         match event {
-            WindowEvent::CloseRequested => _ = self.proxy.send_event(()),
-            WindowEvent::RedrawRequested => _ = self.render(),
-            WindowEvent::Resized(size) => self.renderer.resize(size.width, size.height),
-            WindowEvent::KeyboardInput {
-                event: KeyEvent {
-                    physical_key: PhysicalKey::Code(code),
+            winit::event::WindowEvent::CloseRequested => _ = self.proxy.send_event(()),
+            winit::event::WindowEvent::RedrawRequested => _ = self.render(),
+            winit::event::WindowEvent::Resized(size) => self.renderer.resize(size.width, size.height),
+            winit::event::WindowEvent::KeyboardInput {
+                event: winit::event::KeyEvent {
+                    physical_key: winit::keyboard::PhysicalKey::Code(code),
                     state, ..
                 }, ..
             } => match (code, state.is_pressed()) {
-                (KeyCode::Escape, true) => _ = self.proxy.send_event(()),
+                (winit::keyboard::KeyCode::Escape, true) => _ = self.proxy.send_event(()),
                 _ => {}
             },
             _ => {}
@@ -262,58 +91,6 @@ impl Engine {
 
         let scene_renderer = self.renderer.begin_scene().expect("Should not panic");
         scene_renderer.end_scene();
-
-        /*let output = match self.surface.get_current_texture() {
-            CurrentSurfaceTexture::Success(t) | CurrentSurfaceTexture::Suboptimal(t) => t,
-            CurrentSurfaceTexture::Timeout |
-            CurrentSurfaceTexture::Occluded |
-            CurrentSurfaceTexture::Validation => return Ok(()),
-            CurrentSurfaceTexture::Outdated => {
-                self.surface.configure(&self.device, &self.config);
-                return Ok(());
-            }
-            CurrentSurfaceTexture::Lost => return Err(LostSurfaceError { })
-        };
-
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("render pass"),
-            color_attachments: &[
-                Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.7,
-                            g: 0.3,
-                            b: 0.5,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store
-                    },
-                })
-            ],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-
-        render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.as_wgpu_buffer().slice(..));
-        render_pass.set_index_buffer(self.index_buffer.as_wgpu_buffer().slice(..), self.index_buffer.format().wgpu_format());
-        render_pass.set_bind_group(0, self.texture_sampler.wgpu_bind_group(), &[]);
-        render_pass.set_bind_group(1, self.texture.wgpu_bind_group(), &[]);
-        render_pass.draw_indexed(0..6, 0, 0..1);
-        drop(render_pass);
-
-        let command_buffer = encoder.finish();
-        self.queue.submit(std::iter::once(command_buffer));
-        self.queue.present(output);*/
 
         Ok(())
     }

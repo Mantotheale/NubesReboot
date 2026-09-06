@@ -1,3 +1,4 @@
+use include_dir::include_dir;
 use crate::math::positive_f32::PositiveF32;
 
 pub const MATH_EPSILON: PositiveF32 = PositiveF32::panicking_new_const(1e-5);
@@ -7,3 +8,5 @@ pub const SEGMENTS_MAX_BATCH_SIZE: usize = 100;
 pub const RECTS_MAX_BATCH_SIZE: usize = 100;
 
 pub const TEXTURE_SLOTS: usize = 16;
+
+pub const RESOURCE_DIR: include_dir::Dir = include_dir!("$CARGO_MANIFEST_DIR/resources");

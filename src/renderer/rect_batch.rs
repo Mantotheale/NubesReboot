@@ -156,12 +156,11 @@ struct TexturePool {
     device: wgpu::Device,
     selected_textures: HashMap<TextureId, usize>,
     bound_textures: HashMap<TextureId, usize>,
-    texture_pool: [(TextureId, wgpu::TextureView); constants::TEXTURE_SLOTS],
+    texture_pool: [Texture; constants::TEXTURE_SLOTS],
     bind_group: wgpu::BindGroup,
     group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     has_pool_changed: bool,
-    null_texture: (TextureId, wgpu::TextureView)
 }
 
 impl TexturePool {
@@ -179,25 +178,7 @@ impl TexturePool {
             ..Default::default()
         });
 
-        let null_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: None,
-            size: wgpu::Extent3d {
-                width: 1,
-                height: 1,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-
-        let null_texture = null_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let null_id = TextureId::new();
-
-        let texture_pool = std::array::from_fn(|_| (null_id, null_texture.clone()));
+        let texture_pool = std::array::from_fn(|_| Texture::null(&device));
 
         let bind_group = Self::gen_bind_group(&device, &group_layout, &texture_pool, &sampler);
 
@@ -210,7 +191,6 @@ impl TexturePool {
             group_layout,
             sampler,
             has_pool_changed: false,
-            null_texture: (null_id, null_texture)
         }
     }
 
@@ -223,25 +203,29 @@ impl TexturePool {
             return Ok(*index)
         }
 
+        let current_tex_id = texture.id();
+
         for i in 0..constants::TEXTURE_SLOTS {
-            let old_tex_id = self.texture_pool[i].0;
-            if self.texture_pool[i].0 == self.null_texture.0 {
-                self.texture_pool[i] = (texture.id(), texture.wgpu_texture().clone());
+            let old_tex_id = self.texture_pool[i].id();
+
+            if old_tex_id == TextureId::NULL {
+                self.texture_pool[i] = texture;
                 self.bound_textures.remove(&old_tex_id);
-                self.bound_textures.insert(texture.id(), i);
-                self.selected_textures.insert(texture.id(), i);
+                self.bound_textures.insert(current_tex_id, i);
+                self.selected_textures.insert(current_tex_id, i);
                 self.has_pool_changed = true;
                 return Ok(i);
             }
         }
 
         for i in 0..constants::TEXTURE_SLOTS {
-            let old_tex_id = self.texture_pool[i].0;
+            let old_tex_id = self.texture_pool[i].id();
+
             if self.selected_textures.get(&old_tex_id).is_none() {
-                self.texture_pool[i] = (texture.id(), texture.wgpu_texture().clone());
+                self.texture_pool[i] = texture;
                 self.bound_textures.remove(&old_tex_id);
-                self.bound_textures.insert(texture.id(), i);
-                self.selected_textures.insert(texture.id(), i);
+                self.bound_textures.insert(current_tex_id, i);
+                self.selected_textures.insert(current_tex_id, i);
                 self.has_pool_changed = true;
                 return Ok(i);
             }
@@ -300,17 +284,17 @@ impl TexturePool {
     fn gen_bind_group(
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
-        textures: &[(TextureId, wgpu::TextureView)],
+        textures: &[Texture],
         sampler: &wgpu::Sampler
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Texture Pool bind group"),
             layout,
             entries: &textures.iter().enumerate()
-                .map(|(index, (_, tex))|
+                .map(|(index, tex)|
                     wgpu::BindGroupEntry {
                         binding: index as u32,
-                        resource: wgpu::BindingResource::TextureView(tex)
+                        resource: wgpu::BindingResource::TextureView(tex.wgpu_texture())
                     }
                 ).chain(std::iter::once(
                     wgpu::BindGroupEntry {
