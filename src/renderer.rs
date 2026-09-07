@@ -22,6 +22,7 @@ use crate::renderer::texture::{Texture};
 use crate::renderer::texture::texture_handle::TextureHandle;
 use crate::renderer::texture::uv_rect::UVRect;
 use crate::renderer::textured_segment::TexturedSegmentVertex;
+use crate::util::image_utils;
 
 #[derive(Debug)]
 pub enum BeginSceneError {
@@ -460,28 +461,19 @@ impl IdleRenderer {
 
         let rect_batch = RectBatch::new(device.clone(), queue.clone(), config.format);
 
-        let file = constants::RESOURCE_DIR.get_file(Path::new("tiles/reshiram.png")).unwrap();
-        let image_bytes: &[u8] = file.contents();
+        //let file = constants::RESOURCE_DIR.get_file(Path::new("tiles/reshiram.png")).unwrap();
+        //let image_bytes: &[u8] = file.contents();
 
-        let image = image::load_from_memory(image_bytes).unwrap().flipv();
-        let image_rgba = image.as_rgba8().unwrap();
-        let reshiram_texture = Texture::new(&device, &queue, image_rgba, image.width(), image.height());
+        let reshiram_image = image_utils::read_image(Path::new("tiles/reshiram.png")).unwrap();
+        let reshiram_texture = Texture::new(&device, &queue, reshiram_image.data().unwrap(), reshiram_image.width(), reshiram_image.height());
         let reshiram_texture = TextureHandle::new(&reshiram_texture, UVRect::default());
 
-        let file = constants::RESOURCE_DIR.get_file(Path::new("tiles/mewtwo.png")).unwrap();
-        let image_bytes: &[u8] = file.contents();
-
-        let image = image::load_from_memory(image_bytes).unwrap().flipv();
-        let image_rgba = image.as_rgba8().unwrap();
-        let mewtwo_texture = Texture::new(&device, &queue, image_rgba, image.width(), image.height());
+        let mewtwo_image = image_utils::read_image(Path::new("tiles/mewtwo.png")).unwrap();
+        let mewtwo_texture = Texture::new(&device, &queue, mewtwo_image.data().unwrap(), mewtwo_image.width(), mewtwo_image.height());
         let mewtwo_texture = TextureHandle::new(&mewtwo_texture, UVRect::default());
 
-        let file = constants::RESOURCE_DIR.get_file(Path::new("tiles/rock.png")).unwrap();
-        let image_bytes: &[u8] = file.contents();
-
-        let image = image::load_from_memory(image_bytes).unwrap().flipv();
-        let image_rgba = image.as_rgba8().unwrap();
-        let rock_texture = Texture::new(&device, &queue, image_rgba, image.width(), image.height());
+        let rock_image = image_utils::read_image(Path::new("tiles/rock.png")).unwrap();
+        let rock_texture = Texture::new(&device, &queue, rock_image.data().unwrap(), rock_image.width(), rock_image.height());
         let rock_texture = TextureHandle::new(&rock_texture, UVRect::default());
 
         let rect_1 = Rect2f::new(
