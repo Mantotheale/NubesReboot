@@ -1,6 +1,5 @@
 mod colored_segment;
 mod textured_segment;
-mod colored_rect;
 mod rect_batch;
 mod rect;
 mod tex_coords;

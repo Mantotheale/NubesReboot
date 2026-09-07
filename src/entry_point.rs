@@ -1,13 +1,12 @@
-use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use crate::engine::Engine;
 
 pub struct EntryPoint {
-    proxy: EventLoopProxy<()>,
+    proxy: winit::event_loop::EventLoopProxy<()>,
     engine: Option<Engine>
 }
 
 impl EntryPoint {
-    pub fn new(proxy: EventLoopProxy<()>) -> Self {
+    pub fn new(proxy: winit::event_loop::EventLoopProxy<()>) -> Self {
         Self { proxy, engine: None }
     }
 }
@@ -19,7 +18,7 @@ impl winit::application::ApplicationHandler for EntryPoint {
         self.engine = Some(engine);
     }
 
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, _: ()) {
+    fn user_event(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, _: ()) {
         event_loop.exit();
     }
 
