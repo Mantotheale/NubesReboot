@@ -1,5 +1,9 @@
+mod texture_handle;
+mod x;
+mod uv_rect;
+
+use std::cell::{Cell, OnceCell};
 use std::path::Path;
-use std::sync::atomic::{AtomicU32, Ordering};
 use crate::constants;
 use crate::renderer::tex_coords::RectTexCoords;
 
@@ -12,8 +16,15 @@ impl TextureId {
     pub const NULL: Self = Self { id: 0 };
 
     pub fn new() -> Self {
-        static NEXT_ID: AtomicU32 = AtomicU32::new(1);
-        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        thread_local! {
+            static NEXT_ID: Cell<u32> = Cell::new(1);
+        }
+
+        let id = NEXT_ID.with(|next_id| {
+            let id = next_id.get();
+            next_id.set(id + 1);
+            id
+        });
         Self { id }
     }
 }
@@ -27,30 +38,34 @@ pub struct Texture {
 
 impl Texture {
     pub fn null(device: &wgpu::Device) -> Self {
-        static NULL_VIEW: std::sync::OnceLock<wgpu::TextureView> = std::sync::OnceLock::new();
+        thread_local! {
+            static NULL_VIEW: OnceCell<wgpu::TextureView> = OnceCell::new();
+        }
 
-        let view = NULL_VIEW.get_or_init(|| {
-            let texture = device.create_texture(&wgpu::TextureDescriptor {
-                label: None,
-                size: wgpu::Extent3d {
-                    width: 1,
-                    height: 1,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            });
+        let view = NULL_VIEW.with(|cell| {
+            cell.get_or_init(|| {
+                let texture = device.create_texture(&wgpu::TextureDescriptor {
+                    label: None,
+                    size: wgpu::Extent3d {
+                        width: 1,
+                        height: 1,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                });
 
-            texture.create_view(&wgpu::TextureViewDescriptor::default())
+                texture.create_view(&wgpu::TextureViewDescriptor::default())
+            }).clone()
         });
 
         Self {
             id: TextureId::NULL,
-            texture: view.clone(),
+            texture: view,
             tex_coords: RectTexCoords::DEFAULT_COORDS
         }
     }
