@@ -1,5 +1,5 @@
-use winit::event_loop::EventLoop;
 use crate::entry_point::EntryPoint;
+use winit::event_loop::EventLoop;
 
 mod engine;
 mod entry_point;
@@ -7,7 +7,7 @@ mod renderer;
 mod math;
 mod color;
 mod constants;
-mod auto_generated_id;
+mod util;
 
 pub fn main() {
     let event_loop = EventLoop::with_user_event().build().expect("Couldn't build event loop");

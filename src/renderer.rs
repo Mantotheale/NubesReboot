@@ -2,7 +2,6 @@ mod colored_segment;
 mod textured_segment;
 mod rect_batch;
 mod rect;
-mod tex_coords;
 mod texture;
 
 use std::cmp::Ordering;
@@ -20,6 +19,8 @@ use crate::math::unit_f32::UnitF32;
 use crate::renderer::colored_segment::ColoredSegmentVertex;
 use crate::renderer::rect_batch::RectBatch;
 use crate::renderer::texture::{Texture};
+use crate::renderer::texture::texture_handle::TextureHandle;
+use crate::renderer::texture::uv_rect::UVRect;
 use crate::renderer::textured_segment::TexturedSegmentVertex;
 
 #[derive(Debug)]
@@ -70,7 +71,7 @@ impl Shape {
 #[derive(Clone)]
 pub enum Fill {
     Color(Color),
-    TextureView(Texture)
+    TextureHandle(TextureHandle)
 }
 
 impl Fill {
@@ -78,11 +79,11 @@ impl Fill {
         match a {
             Fill::Color(_) => match b {
                 Fill::Color(_) => Ordering::Equal,
-                Fill::TextureView(_) => Ordering::Less
+                Fill::TextureHandle(_) => Ordering::Less
             }
-            Fill::TextureView(tex_a) => match b {
+            Fill::TextureHandle(tex_a) => match b {
                 Fill::Color(_) => Ordering::Greater,
-                Fill::TextureView(tex_b) => Ord::cmp(&tex_a.id(), &tex_b.id())
+                Fill::TextureHandle(tex_b) => Ord::cmp(&tex_a.id(), &tex_b.id())
             }
         }
     }
@@ -130,9 +131,9 @@ pub struct IdleRenderer {
     white: Color,
     yellow: Color,
     color_1: Color,
-    reshiram_texture: Texture,
-    rock_texture: Texture,
-    mewtwo_texture: Texture
+    reshiram_texture: TextureHandle,
+    rock_texture: TextureHandle,
+    mewtwo_texture: TextureHandle
 }
 
 impl IdleRenderer {
@@ -459,9 +460,29 @@ impl IdleRenderer {
 
         let rect_batch = RectBatch::new(device.clone(), queue.clone(), config.format);
 
-        let reshiram_texture = Texture::from_path(Path::new("tiles/reshiram.png"), &device, &queue).unwrap();
-        let mewtwo_texture = Texture::from_path(Path::new("tiles/mewtwo.png"), &device, &queue).unwrap();
-        let rock_texture = Texture::from_path(Path::new("tiles/rock.png"), &device, &queue).unwrap();
+        let file = constants::RESOURCE_DIR.get_file(Path::new("tiles/reshiram.png")).unwrap();
+        let image_bytes: &[u8] = file.contents();
+
+        let image = image::load_from_memory(image_bytes).unwrap().flipv();
+        let image_rgba = image.as_rgba8().unwrap();
+        let reshiram_texture = Texture::new(&device, &queue, image_rgba, image.width(), image.height());
+        let reshiram_texture = TextureHandle::new(&reshiram_texture, UVRect::default());
+
+        let file = constants::RESOURCE_DIR.get_file(Path::new("tiles/mewtwo.png")).unwrap();
+        let image_bytes: &[u8] = file.contents();
+
+        let image = image::load_from_memory(image_bytes).unwrap().flipv();
+        let image_rgba = image.as_rgba8().unwrap();
+        let mewtwo_texture = Texture::new(&device, &queue, image_rgba, image.width(), image.height());
+        let mewtwo_texture = TextureHandle::new(&mewtwo_texture, UVRect::default());
+
+        let file = constants::RESOURCE_DIR.get_file(Path::new("tiles/rock.png")).unwrap();
+        let image_bytes: &[u8] = file.contents();
+
+        let image = image::load_from_memory(image_bytes).unwrap().flipv();
+        let image_rgba = image.as_rgba8().unwrap();
+        let rock_texture = Texture::new(&device, &queue, image_rgba, image.width(), image.height());
+        let rock_texture = TextureHandle::new(&rock_texture, UVRect::default());
 
         let rect_1 = Rect2f::new(
             Point2f::new(-0.75, -0.75),
@@ -721,11 +742,11 @@ impl<'a> InProgressRenderer<'a> {
         self.add_rect(self.renderer.rect_2, Fill::Color(self.renderer.white), 1);
         self.add_rect(self.renderer.rect_3, Fill::Color(self.renderer.yellow), 1);
         self.add_rect(self.renderer.rect_4, Fill::Color(self.renderer.white), 1);
-        self.add_rect(self.renderer.rect_5, Fill::TextureView(self.renderer.reshiram_texture.clone()), 1);
-        self.add_rect(self.renderer.rect_6, Fill::TextureView(self.renderer.mewtwo_texture.clone()), 1);
-        self.add_rect(self.renderer.rect_7, Fill::TextureView(self.renderer.rock_texture.clone()), 1);
+        self.add_rect(self.renderer.rect_5, Fill::TextureHandle(self.renderer.reshiram_texture.clone()), 1);
+        self.add_rect(self.renderer.rect_6, Fill::TextureHandle(self.renderer.mewtwo_texture.clone()), 1);
+        self.add_rect(self.renderer.rect_7, Fill::TextureHandle(self.renderer.rock_texture.clone()), 1);
         self.add_rect(self.renderer.rect_8, Fill::Color(self.renderer.color_1), 1);
-        self.add_rect(self.renderer.rect_9, Fill::TextureView(self.renderer.reshiram_texture.clone()), 1);
+        self.add_rect(self.renderer.rect_9, Fill::TextureHandle(self.renderer.reshiram_texture.clone()), 1);
 
         self.render_commands.sort_by(|a, b| RenderCommand::draw_order(a, b));
         for command in self.render_commands {

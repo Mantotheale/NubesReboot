@@ -1,6 +1,6 @@
 use std::ops::Add;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct TexCoord {
     u: f32,
     v: f32
@@ -54,7 +54,7 @@ impl Add<UVOffset> for TexCoord {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct UVRect {
     bottom_left: TexCoord,
     top_right: TexCoord

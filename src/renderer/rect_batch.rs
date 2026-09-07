@@ -4,6 +4,7 @@ use crate::math::rect2f::Rect2f;
 use crate::renderer::Fill;
 use crate::renderer::rect::RectVertex;
 use crate::renderer::texture::{Texture, TextureId};
+use crate::renderer::texture::texture_handle::TextureHandle;
 
 pub struct RectBatch {
     inserted_rects: usize,
@@ -46,7 +47,7 @@ impl RectBatch {
             source: wgpu::ShaderSource::Wgsl(include_str!("../../resources/shaders/rect_shader.wgsl").into()),
         });
 
-        let texture_pool = TexturePool::new(device.clone());
+        let texture_pool = TexturePool::new(&device, &queue);
 
         let pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -115,10 +116,10 @@ impl RectBatch {
                 self.cpu_buffer[insertion_idx..insertion_idx + RectVertex::RECT_BYTE_SIZE]
                     .copy_from_slice(bytemuck::cast_slice(&vertex_data));
             }
-            Fill::TextureView(texture) => {
-                match self.texture_pool.push(texture.clone()) {
+            Fill::TextureHandle(tex_handle) => {
+                match self.texture_pool.push(tex_handle.clone()) {
                     Ok(tex_slot) => {
-                        let vertex_data = RectVertex::from_textured_rect(rect, tex_slot, texture.tex_coords());
+                        let vertex_data = RectVertex::from_textured_rect(rect, tex_slot, tex_handle);
                         self.cpu_buffer[insertion_idx..insertion_idx + RectVertex::RECT_BYTE_SIZE]
                             .copy_from_slice(bytemuck::cast_slice(&vertex_data));
                     }
@@ -161,10 +162,11 @@ struct TexturePool {
     group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     has_pool_changed: bool,
+    null_texture: Texture
 }
 
 impl TexturePool {
-    pub fn new(device: wgpu::Device) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         let group_layout = Self::gen_group_layout(&device);
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -178,12 +180,13 @@ impl TexturePool {
             ..Default::default()
         });
 
-        let texture_pool = std::array::from_fn(|_| Texture::null(&device));
+        let null_texture = Texture::new(device, queue, &[0, 0, 0, 0], 1, 1);
+        let texture_pool = std::array::from_fn(|_| null_texture.clone());
 
         let bind_group = Self::gen_bind_group(&device, &group_layout, &texture_pool, &sampler);
 
         Self {
-            device,
+            device: device.clone(),
             selected_textures: HashMap::new(),
             bound_textures: HashMap::new(),
             texture_pool,
@@ -191,25 +194,26 @@ impl TexturePool {
             group_layout,
             sampler,
             has_pool_changed: false,
+            null_texture
         }
     }
 
-    fn push(&mut self, texture: Texture) -> Result<usize, TexturePoolFullError> {
-        if let Some(index) = self.selected_textures.get(&texture.id()) { return Ok(*index) }
-        if self.selected_textures.len() == constants::TEXTURE_SLOTS { return Err(TexturePoolFullError { texture }) }
+    fn push(&mut self, tex_handle: TextureHandle) -> Result<usize, TexturePoolFullError> {
+        let current_tex_id = tex_handle.texture().id();
+        
+        if let Some(index) = self.selected_textures.get(&current_tex_id) { return Ok(*index) }
+        if self.selected_textures.len() == constants::TEXTURE_SLOTS { return Err(TexturePoolFullError { texture: tex_handle }) }
 
-        if let Some(index) = self.bound_textures.get(&texture.id()) {
-            self.selected_textures.insert(texture.id(), *index);
+        if let Some(index) = self.bound_textures.get(&current_tex_id) {
+            self.selected_textures.insert(current_tex_id, *index);
             return Ok(*index)
         }
-
-        let current_tex_id = texture.id();
-
+        
         for i in 0..constants::TEXTURE_SLOTS {
             let old_tex_id = self.texture_pool[i].id();
 
-            if old_tex_id == TextureId::NULL {
-                self.texture_pool[i] = texture;
+            if old_tex_id == self.null_texture.id() {
+                self.texture_pool[i] = tex_handle.texture().clone();
                 self.bound_textures.remove(&old_tex_id);
                 self.bound_textures.insert(current_tex_id, i);
                 self.selected_textures.insert(current_tex_id, i);
@@ -222,7 +226,7 @@ impl TexturePool {
             let old_tex_id = self.texture_pool[i].id();
 
             if self.selected_textures.get(&old_tex_id).is_none() {
-                self.texture_pool[i] = texture;
+                self.texture_pool[i] = tex_handle.texture().clone();
                 self.bound_textures.remove(&old_tex_id);
                 self.bound_textures.insert(current_tex_id, i);
                 self.selected_textures.insert(current_tex_id, i);
@@ -325,7 +329,7 @@ impl std::error::Error for RectBatchPushError { }
 
 #[derive(Debug)]
 pub struct TexturePoolFullError {
-    texture: Texture
+    texture: TextureHandle
 }
 
 impl std::fmt::Display for TexturePoolFullError {

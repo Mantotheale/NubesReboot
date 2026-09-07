@@ -1,13 +1,13 @@
 use crate::color::Color;
 use crate::math::rect2f::Rect2f;
-use crate::renderer::tex_coords::RectTexCoords;
+use crate::renderer::texture::texture_handle::TextureHandle;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct RectVertex {
     position: [f32; 2],
     color: [f32; 4],
-    tex_coords: [f32; 2],
+    tex_coord: [f32; 2],
     tex_index: i32
 }
 
@@ -57,55 +57,58 @@ impl RectVertex {
             Self {
                 position: rect.bottom_left().into(),
                 color: color.into(),
-                tex_coords: [0.0, 0.0],
+                tex_coord: [0.0, 0.0],
                 tex_index: -1
             },
             Self {
                 position: rect.bottom_right().into(),
                 color: color.into(),
-                tex_coords: [1.0, 0.0],
+                tex_coord: [1.0, 0.0],
                 tex_index: -1
             },
             Self {
                 position: rect.top_right().into(),
                 color: color.into(),
-                tex_coords: [1.0, 1.0],
+                tex_coord: [1.0, 1.0],
                 tex_index: -1
             },
             Self {
                 position: rect.top_left().into(),
                 color: color.into(),
-                tex_coords: [0.0, 1.0],
+                tex_coord: [0.0, 1.0],
                 tex_index: -1
             }
         ]
     }
 
-    pub fn from_textured_rect(rect: Rect2f, tex_slot: usize, tex_coords: RectTexCoords) -> [Self; Self::VERTICES_PER_RECT] {
+    pub fn from_textured_rect(rect: Rect2f, tex_slot: usize, tex: TextureHandle) -> [Self; Self::VERTICES_PER_RECT] {
+        let uv_rect = tex.uv_rect();
+        let tex_index = tex_slot as i32;
+
         [
             Self {
                 position: rect.bottom_left().into(),
                 color: [0.0; 4],
-                tex_coords: tex_coords.bottom_left().into(),
-                tex_index: tex_slot as i32
+                tex_coord: uv_rect.bottom_left().into(),
+                tex_index
             },
             Self {
                 position: rect.bottom_right().into(),
                 color: [0.0; 4],
-                tex_coords: tex_coords.bottom_right().into(),
-                tex_index: tex_slot as i32
+                tex_coord: uv_rect.bottom_right().into(),
+                tex_index
             },
             Self {
                 position: rect.top_right().into(),
                 color: [0.0; 4],
-                tex_coords: tex_coords.top_right().into(),
-                tex_index: tex_slot as i32
+                tex_coord: uv_rect.top_right().into(),
+                tex_index
             },
             Self {
                 position: rect.top_left().into(),
                 color: [0.0; 4],
-                tex_coords: tex_coords.top_left().into(),
-                tex_index: tex_slot as i32
+                tex_coord: uv_rect.top_left().into(),
+                tex_index
             }
         ]
     }
