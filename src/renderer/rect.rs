@@ -1,6 +1,7 @@
 use crate::color::Color;
 use crate::math::rect2f::Rect2f;
 use crate::renderer::texture::texture_handle::TextureHandle;
+use crate::renderer::texture::uv_rect::UVRect;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -53,29 +54,31 @@ impl RectVertex {
     }
 
     pub fn from_colored_rect(rect: Rect2f, color: Color) -> [Self; Self::VERTICES_PER_RECT] {
+        let uv_rect = UVRect::default();
+
         [
             Self {
                 position: rect.bottom_left().into(),
                 color: color.into(),
-                tex_coord: [0.0, 0.0],
+                tex_coord: uv_rect.bottom_left().into(),
                 tex_index: -1
             },
             Self {
                 position: rect.bottom_right().into(),
                 color: color.into(),
-                tex_coord: [1.0, 0.0],
+                tex_coord: uv_rect.bottom_left().into(),
                 tex_index: -1
             },
             Self {
                 position: rect.top_right().into(),
                 color: color.into(),
-                tex_coord: [1.0, 1.0],
+                tex_coord: uv_rect.bottom_left().into(),
                 tex_index: -1
             },
             Self {
                 position: rect.top_left().into(),
                 color: color.into(),
-                tex_coord: [0.0, 1.0],
+                tex_coord: uv_rect.top_left().into(),
                 tex_index: -1
             }
         ]

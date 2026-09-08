@@ -18,10 +18,8 @@ use crate::math::segment2f::Segment2f;
 use crate::math::unit_f32::UnitF32;
 use crate::renderer::colored_segment::ColoredSegmentVertex;
 use crate::renderer::rect_batch::RectBatch;
-use crate::renderer::texture::{Texture};
 use crate::renderer::texture::texture_atlas::TextureAtlas;
 use crate::renderer::texture::texture_handle::TextureHandle;
-use crate::renderer::texture::uv_rect::UVRect;
 use crate::renderer::textured_segment::TexturedSegmentVertex;
 use crate::util::image_utils;
 
@@ -462,18 +460,6 @@ impl IdleRenderer {
 
         let rect_batch = RectBatch::new(device.clone(), queue.clone(), config.format);
 
-        let reshiram_image = image_utils::read_image(Path::new("tiles/reshiram.png")).unwrap();
-        let reshiram_texture = Texture::new(&device, &queue, reshiram_image.data().unwrap(), reshiram_image.width(), reshiram_image.height());
-        let reshiram_texture = TextureHandle::new(&reshiram_texture, UVRect::default());
-
-        let mewtwo_image = image_utils::read_image(Path::new("tiles/mewtwo.png")).unwrap();
-        let mewtwo_texture = Texture::new(&device, &queue, mewtwo_image.data().unwrap(), mewtwo_image.width(), mewtwo_image.height());
-        let mewtwo_texture = TextureHandle::new(&mewtwo_texture, UVRect::default());
-
-        let rock_image = image_utils::read_image(Path::new("tiles/rock.png")).unwrap();
-        let rock_texture = Texture::new(&device, &queue, rock_image.data().unwrap(), rock_image.width(), rock_image.height());
-        let rock_texture = TextureHandle::new(&rock_texture, UVRect::default());
-
         let rect_1 = Rect2f::new(
             Point2f::new(-0.75, -0.75),
             PositiveF32::new(0.2).expect("Positive number"),
@@ -549,16 +535,23 @@ impl IdleRenderer {
             UnitF32::ONE
         );
 
-        let reshiram_image = image_utils::read_image(Path::new("tiles/reshiram.png")).unwrap();
-        let mewtwo_image = image_utils::read_image(Path::new("tiles/mewtwo.png")).unwrap();
-        let rock_image = image_utils::read_image(Path::new("tiles/rock.png")).unwrap();
+        let reshiram_path = Path::new("tiles/reshiram.png");
+        let mewtwo_path = Path::new("tiles/mewtwo.png");
+        let rock_path = Path::new("tiles/rock.png");
+
+        let reshiram_image = image_utils::read_image(reshiram_path).unwrap();
+        let mewtwo_image = image_utils::read_image(mewtwo_path).unwrap();
+        let rock_image = image_utils::read_image(rock_path).unwrap();
         let tiles = [
-            (Path::new("tiles/reshiram.png"), reshiram_image),
-            (Path::new("tiles/mewtwo.png"), mewtwo_image),
-            (Path::new("tiles/rock.png"), rock_image),
+            (reshiram_path, reshiram_image),
+            (mewtwo_path, mewtwo_image),
+            (rock_path, rock_image),
         ];
         
-        TextureAtlas::new(&device, &queue, &tiles).unwrap();
+        let atlas = TextureAtlas::new(&device, &queue, &tiles).unwrap();
+        let reshiram_texture = atlas.get_tile(reshiram_path).unwrap().clone();
+        let mewtwo_texture = atlas.get_tile(mewtwo_path).unwrap().clone();
+        let rock_texture = atlas.get_tile(rock_path).unwrap().clone();
 
         Ok(Self {
             surface,

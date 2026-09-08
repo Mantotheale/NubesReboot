@@ -8,10 +8,14 @@ use crate::renderer::texture::texture_handle::TextureHandle;
 use crate::renderer::texture::uv_rect::{TexCoord, UVOffset, UVRect};
 
 pub struct TextureAtlas {
-    texture_handles: HashMap<PathBuf, TextureHandle>
+    tiles: HashMap<PathBuf, TextureHandle>
 }
 
 impl TextureAtlas {
+    pub fn get_tile(&self, path: &Path) -> Option<&TextureHandle> {
+        self.tiles.get(path)
+    }
+
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, tiles: &[(&Path, ImageData)]) -> Result<Self, ()> {
         let mut tiles = tiles.iter()
             .map(|(path, data)| (*path, data))
@@ -37,7 +41,7 @@ impl TextureAtlas {
         println!("Atlas size: {atlas_size}");
 
         let texture_handles = Self::generate_atlas(device, queue, &placements, &tiles, atlas_size);
-        Ok(Self { texture_handles })
+        Ok(Self { tiles: texture_handles })
     }
 
     fn generate_placements<'a>(tiles: &[(&'a Path, &ImageData)], atlas_size: u32) -> Result<Vec<(&'a Path, Placement)>, ()> {
@@ -90,7 +94,6 @@ impl TextureAtlas {
             ))
         }
 
-        image::imageops::flip_vertical_in_place(&mut atlas);
         let texture = Texture::new(device, queue, atlas.as_bytes(), atlas_size, atlas_size);
 
         let mut texture_handles = HashMap::new();
@@ -101,6 +104,9 @@ impl TextureAtlas {
             );
         }
 
+        image::imageops::flip_vertical_in_place(&mut atlas);
+        atlas.save("C:\\Users\\Mantotheale\\Downloads\\ciao.png").unwrap();
+        
         texture_handles
     }
 
