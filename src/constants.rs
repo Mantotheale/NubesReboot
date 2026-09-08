@@ -9,4 +9,6 @@ pub const RECTS_MAX_BATCH_SIZE: usize = 100;
 
 pub const TEXTURE_SLOTS: usize = 16;
 
+pub const MAX_TEXTURE_SIZE: usize = 2048;
+
 pub const RESOURCE_DIR: include_dir::Dir = include_dir!("$CARGO_MANIFEST_DIR/resources");

@@ -19,6 +19,7 @@ use crate::math::unit_f32::UnitF32;
 use crate::renderer::colored_segment::ColoredSegmentVertex;
 use crate::renderer::rect_batch::RectBatch;
 use crate::renderer::texture::{Texture};
+use crate::renderer::texture::texture_atlas::TextureAtlas;
 use crate::renderer::texture::texture_handle::TextureHandle;
 use crate::renderer::texture::uv_rect::UVRect;
 use crate::renderer::textured_segment::TexturedSegmentVertex;
@@ -461,9 +462,6 @@ impl IdleRenderer {
 
         let rect_batch = RectBatch::new(device.clone(), queue.clone(), config.format);
 
-        //let file = constants::RESOURCE_DIR.get_file(Path::new("tiles/reshiram.png")).unwrap();
-        //let image_bytes: &[u8] = file.contents();
-
         let reshiram_image = image_utils::read_image(Path::new("tiles/reshiram.png")).unwrap();
         let reshiram_texture = Texture::new(&device, &queue, reshiram_image.data().unwrap(), reshiram_image.width(), reshiram_image.height());
         let reshiram_texture = TextureHandle::new(&reshiram_texture, UVRect::default());
@@ -551,6 +549,16 @@ impl IdleRenderer {
             UnitF32::ONE
         );
 
+        let reshiram_image = image_utils::read_image(Path::new("tiles/reshiram.png")).unwrap();
+        let mewtwo_image = image_utils::read_image(Path::new("tiles/mewtwo.png")).unwrap();
+        let rock_image = image_utils::read_image(Path::new("tiles/rock.png")).unwrap();
+        let tiles = [
+            (Path::new("tiles/reshiram.png"), reshiram_image),
+            (Path::new("tiles/mewtwo.png"), mewtwo_image),
+            (Path::new("tiles/rock.png"), rock_image),
+        ];
+        
+        TextureAtlas::new(&device, &queue, &tiles).unwrap();
 
         Ok(Self {
             surface,
