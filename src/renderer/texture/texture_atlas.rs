@@ -105,7 +105,7 @@ impl TextureAtlas {
         }
 
         image::imageops::flip_vertical_in_place(&mut atlas);
-        atlas.save("C:\\Users\\Mantotheale\\Downloads\\ciao.png").unwrap();
+        atlas.save("C:\\Users\\a-mantonico\\Downloads\\ciao.png").unwrap();
         
         texture_handles
     }

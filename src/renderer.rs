@@ -1,27 +1,36 @@
 mod colored_segment;
 mod textured_segment;
-mod rect_batch;
 mod rect;
 mod texture;
+mod segment;
 
+use crate::{
+    renderer::{
+        textured_segment::TexturedSegmentVertex,
+        texture::{
+            texture_handle::TextureHandle,
+            texture_atlas::TextureAtlas
+        },
+        colored_segment::ColoredSegmentVertex
+    },
+    math::{
+        unit_f32::UnitF32,
+        segment2f::Segment2f,
+        rect2f::Rect2f,
+        positive_f32::PositiveF32,
+        point2f::Point2f
+    },
+    engine::InitializationError,
+    constants,
+    color::Color,
+    util::image_utils
+};
+use rect::rect_batch::RectBatch;
 use std::cmp::Ordering;
-use std::path::{Path,};
+use std::path::Path;
 use std::sync::Arc;
 use wgpu::CurrentSurfaceTexture;
-use crate::color::Color;
-use crate::constants;
-use crate::engine::InitializationError;
-use crate::math::point2f::Point2f;
-use crate::math::positive_f32::PositiveF32;
-use crate::math::rect2f::Rect2f;
-use crate::math::segment2f::Segment2f;
-use crate::math::unit_f32::UnitF32;
-use crate::renderer::colored_segment::ColoredSegmentVertex;
-use crate::renderer::rect_batch::RectBatch;
-use crate::renderer::texture::texture_atlas::TextureAtlas;
-use crate::renderer::texture::texture_handle::TextureHandle;
-use crate::renderer::textured_segment::TexturedSegmentVertex;
-use crate::util::image_utils;
+use crate::renderer::segment::segment_batch::SegmentBatch;
 
 #[derive(Debug)]
 pub enum BeginSceneError {
@@ -48,21 +57,21 @@ impl std::fmt::Display for BeginSceneError {
 
 impl std::error::Error for BeginSceneError { }
 
-enum Shape {
-    Rect(Rect2f),
-    Segment { segment: Segment2f, pixel_width: PositiveF32 }
+enum Primitive {
+    Rect { rect: Rect2f, fill: Fill },
+    Segment { segment: Segment2f, pixel_width: PositiveF32, color: Color }
 }
 
-impl Shape {
+impl Primitive {
     fn draw_order(a: &Self, b: &Self) -> Ordering {
         match a {
-            Shape::Rect(_) => match b {
-                Shape::Rect(_) => Ordering::Equal,
-                Shape::Segment { .. } => Ordering::Less
+            Primitive::Rect { fill: fill_a, .. } => match b {
+                Primitive::Rect { fill: fill_b, .. } => Fill::draw_order(fill_a, fill_b),
+                Primitive::Segment { .. } => Ordering::Greater
             }
-            Shape::Segment { .. } => match b {
-                Shape::Rect(_) => Ordering::Greater,
-                Shape::Segment { .. } => Ordering::Equal
+            Primitive::Segment { .. } => match b {
+                Primitive::Rect { .. } => Ordering::Less,
+                Primitive::Segment { .. } => Ordering::Equal
             }
         }
     }
@@ -90,16 +99,14 @@ impl Fill {
 }
 
 struct RenderCommand {
-    shape: Shape,
-    fill: Fill,
+    primitive: Primitive,
     z_index: i32
 }
 
 impl RenderCommand {
     fn draw_order(a: &Self, b: &Self) -> Ordering {
         Ord::cmp(&a.z_index, &b.z_index)
-            .then_with(|| Shape::draw_order(&a.shape, &b.shape))
-            .then_with(|| Fill::draw_order(&a.fill, &b.fill))
+            .then_with(|| Primitive::draw_order(&a.primitive, &b.primitive))
     }
 }
 
@@ -133,7 +140,11 @@ pub struct IdleRenderer {
     color_1: Color,
     reshiram_texture: TextureHandle,
     rock_texture: TextureHandle,
-    mewtwo_texture: TextureHandle
+    mewtwo_texture: TextureHandle,
+    segment_batch: SegmentBatch,
+    segment_1: Segment2f,
+    segment_2: Segment2f,
+    segment_3: Segment2f,
 }
 
 impl IdleRenderer {
@@ -553,6 +564,26 @@ impl IdleRenderer {
         let mewtwo_texture = atlas.get_tile(mewtwo_path).unwrap().clone();
         let rock_texture = atlas.get_tile(rock_path).unwrap().clone();
 
+        let segment_batch = SegmentBatch::new(device.clone(), queue.clone(), config.format);
+
+        let segment_1 = Segment2f::new(
+            Point2f::new(-0.6, -0.6),
+            Point2f::new(-0.6, 0.6),
+            constants::MATH_EPSILON
+        ).unwrap();
+
+        let segment_2 = Segment2f::new(
+            Point2f::new(0.6, -0.6),
+            Point2f::new(0.6, 0.6),
+            constants::MATH_EPSILON
+        ).unwrap();
+
+        let segment_3 = Segment2f::new(
+            Point2f::new(-0.2, 0.2),
+            Point2f::new(0.2, -0.2),
+            constants::MATH_EPSILON
+        ).unwrap();
+
         Ok(Self {
             surface,
             device,
@@ -583,7 +614,11 @@ impl IdleRenderer {
             rect_9,
             white,
             yellow,
-            color_1
+            color_1,
+            segment_batch,
+            segment_1,
+            segment_2,
+            segment_3
         })
     }
 
@@ -628,20 +663,18 @@ pub struct InProgressRenderer<'a> {
 }
 
 impl<'a> InProgressRenderer<'a> {
-    pub fn add_segment(&mut self, segment: Segment2f, fill: Fill, pixel_width: PositiveF32, z_index: i32) {
+    pub fn add_segment(&mut self, segment: Segment2f, color: Color, pixel_width: PositiveF32, z_index: i32) {
         self.render_commands.push(RenderCommand {
-            shape: Shape::Segment { segment, pixel_width },
-            fill,
+            primitive: Primitive::Segment { segment, pixel_width, color },
             z_index,
-        })
+        });
     }
 
     pub fn add_rect(&mut self, rect: Rect2f, fill: Fill, z_index: i32) {
         self.render_commands.push(RenderCommand {
-            shape: Shape::Rect(rect),
-            fill,
+            primitive: Primitive::Rect { rect, fill },
             z_index,
-        })
+        });
     }
 
     pub fn end_scene(mut self) {
@@ -731,6 +764,8 @@ impl<'a> InProgressRenderer<'a> {
         render_pass.set_bind_group(1, &self.renderer.textured_segment_bind_group, &[]);
         render_pass.draw_indexed(0..6, 0, 0..1);
 
+        let (width, height) = (self.renderer.config.width, self.renderer.config.height);
+
         self.add_rect(self.renderer.rect_1, Fill::Color(self.renderer.yellow), 1);
         self.add_rect(self.renderer.rect_2, Fill::Color(self.renderer.white), 1);
         self.add_rect(self.renderer.rect_3, Fill::Color(self.renderer.yellow), 1);
@@ -741,22 +776,35 @@ impl<'a> InProgressRenderer<'a> {
         self.add_rect(self.renderer.rect_8, Fill::Color(self.renderer.color_1), 1);
         self.add_rect(self.renderer.rect_9, Fill::TextureHandle(self.renderer.reshiram_texture.clone()), 1);
 
+        self.add_segment(self.renderer.segment_1, self.renderer.color_1, PositiveF32::new(2.0).unwrap(), 1);
+        self.add_segment(self.renderer.segment_2, self.renderer.yellow, PositiveF32::new(3.0).unwrap(), 1);
+        self.add_segment(self.renderer.segment_3, self.renderer.white, PositiveF32::new(4.0).unwrap(), 1);
+
         self.render_commands.sort_by(|a, b| RenderCommand::draw_order(a, b));
         for command in self.render_commands {
-            match command.shape {
-                Shape::Rect(rect) => {
-                    let res = self.renderer.rect_batch.push(rect, command.fill.clone());
+            match command.primitive {
+                Primitive::Rect { rect, fill, .. } => {
+                    let res = self.renderer.rect_batch.push(rect, fill.clone());
                     if res.is_err() {
                         self.renderer.rect_batch.draw(&mut render_pass);
                         self.renderer.rect_batch.clear();
-                        self.renderer.rect_batch.push(rect, command.fill).expect("The batch is now empty");
+                        self.renderer.rect_batch.push(rect, fill).expect("The batch is now empty");
                     }
                 }
-                Shape::Segment { .. } => unimplemented!()
+                Primitive::Segment { segment, color, pixel_width } => {
+                    let res = self.renderer.segment_batch.push(segment, color, pixel_width);
+                    if res.is_err() {
+                        self.renderer.segment_batch.draw(&mut render_pass, (width, height));
+                        self.renderer.segment_batch.clear();
+                        self.renderer.segment_batch.push(segment, color, pixel_width).expect("The batch is now empty");
+                    }
+                }
             }
         }
         self.renderer.rect_batch.draw(&mut render_pass);
         self.renderer.rect_batch.clear();
+        self.renderer.segment_batch.draw(&mut render_pass, (width, height));
+        self.renderer.segment_batch.clear();
 
         drop(render_pass);
 

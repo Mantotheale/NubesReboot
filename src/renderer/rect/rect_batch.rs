@@ -44,7 +44,7 @@ impl RectBatch {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Rect batch shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../../resources/shaders/rect_shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../../../resources/shaders/rect_shader.wgsl").into()),
         });
 
         let texture_pool = TexturePool::new(&device, &queue);

@@ -3,6 +3,8 @@ use crate::math::rect2f::Rect2f;
 use crate::renderer::texture::texture_handle::TextureHandle;
 use crate::renderer::texture::uv_rect::UVRect;
 
+pub mod rect_batch;
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct RectVertex {
