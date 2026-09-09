@@ -56,6 +56,8 @@ impl SegmentBatch {
             mapped_at_creation: false,
         });
         
+        queue.write_buffer(&screen_dimensions_buffer, 0, bytemuck::cast_slice(&[0, 0]));
+        
         let screen_dimensions_binding_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[

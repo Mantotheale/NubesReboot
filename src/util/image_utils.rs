@@ -6,7 +6,6 @@ use crate::constants;
 pub enum ReadImageError {
     FileNotFound(PathBuf),
     ImageError(image::ImageError),
-    NotRgba8
 }
 
 impl std::fmt::Display for ReadImageError {
@@ -14,7 +13,6 @@ impl std::fmt::Display for ReadImageError {
         match self {
             ReadImageError::FileNotFound(path) => write!(f, "File not found: {:?}", path),
             ReadImageError::ImageError(err) => write!(f, "Image errror: {}", err),
-            ReadImageError::NotRgba8 => write!(f, "The image doesn't support format RGBA")
         }
     }
 }
@@ -48,13 +46,7 @@ pub struct ImageData {
 }
 
 impl ImageData {
-    pub fn data(&self) -> Result<&[u8], ReadImageError> {
-        self.image.as_rgba8()
-            .map(|image| image.as_raw().as_slice())
-            .ok_or(ReadImageError::NotRgba8)
-    }
-
-    pub fn width(&self) -> u32 {
+       pub fn width(&self) -> u32 {
         self.image.width()
     }
 

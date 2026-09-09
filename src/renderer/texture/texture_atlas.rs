@@ -38,8 +38,6 @@ impl TextureAtlas {
             atlas_size *= 2;
         };
 
-        println!("Atlas size: {atlas_size}");
-
         let texture_handles = Self::generate_atlas(device, queue, &placements, &tiles, atlas_size);
         Ok(Self { tiles: texture_handles })
     }
@@ -47,23 +45,19 @@ impl TextureAtlas {
     fn generate_placements<'a>(tiles: &[(&'a Path, &ImageData)], atlas_size: u32) -> Result<Vec<(&'a Path, Placement)>, ()> {
         let mut empty_spaces = vec![EmptySpace::starting_space(atlas_size, atlas_size)];
         let mut placements = Vec::new();
-        println!("{:?}", empty_spaces.get(0).unwrap());
 
         for (path, image) in tiles {
-            println!("{:?}", path);
             let mut placement = None;
 
             for i in (0..empty_spaces.len()).rev() {
                 let empty_space = empty_spaces[i];
                 if !empty_space.can_image_fit(image.width(), image.height()) { continue; }
 
-                println!("{:?}", empty_space);
                 empty_spaces.remove(i);
 
                 for s in empty_space.split_space(image.width(), image.height()) {
                     empty_spaces.push(s);
                 }
-                println!("{:?}", empty_spaces);
 
                 placement = Some(empty_space.placement);
                 break;
