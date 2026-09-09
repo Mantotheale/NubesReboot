@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use crate::app::App;
 use crate::color::Color;
 use crate::math::unit_f32::UnitF32;
 use crate::renderer::IdleRenderer;
@@ -15,17 +16,18 @@ pub enum InitializationError {
     NoSRGBSurface,
 }
 
-pub struct Engine {
+pub struct Engine<T: App> {
     proxy: winit::event_loop::EventLoopProxy<()>,
     window: Arc<winit::window::Window>,
     next_update: Instant,
     next_one_sec_update: Instant,
     update_duration: Duration,
     one_sec_duration: Duration,
-    renderer: IdleRenderer
+    renderer: IdleRenderer,
+    app: T
 }
 
-impl Engine {
+impl<T: App> Engine<T> {
     pub async fn new(proxy: winit::event_loop::EventLoopProxy<()>, event_loop: &winit::event_loop::ActiveEventLoop) -> Result<Self, InitializationError> {
         let window_attributes = winit::window::Window::default_attributes();
         let window = event_loop.create_window(window_attributes)
@@ -52,7 +54,8 @@ impl Engine {
             next_one_sec_update: now + one_sec_duration,
             update_duration,
             one_sec_duration,
-            renderer
+            renderer,
+            app: T::init()
         })
     }
 

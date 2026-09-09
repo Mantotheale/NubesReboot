@@ -12,7 +12,7 @@ impl std::fmt::Display for ReadImageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ReadImageError::FileNotFound(path) => write!(f, "File not found: {:?}", path),
-            ReadImageError::ImageError(err) => write!(f, "Image errror: {}", err),
+            ReadImageError::ImageError(err) => write!(f, "Image error: {}", err),
         }
     }
 }

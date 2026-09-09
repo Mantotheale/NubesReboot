@@ -1,0 +1,17 @@
+0 0 1 1 1 lake_center
+1 0 1 1 1 lake_right
+1 1 1 1 1 lake_top_right
+0 1 1 1 1 lake_top
+-1 1 1 1 1 lake_top_left
+-1 0 1 1 1 lake_left
+-1 -1 1 1 1 lake_bottom_left
+0 -1 1 1 1 lake_bottom
+-1 1 1 1 1 lake_bottom_right
+1 0 0 1 1 grass
+1 1 0 1 1 grass
+0 1 0 1 1 grass
+-1 1 0 1 1 grass
+-1 0 0 1 1 grass
+-1 -1 0 1 1 grass
+0 -1 0 1 1 grass
+-1 1 0 1 1 grass

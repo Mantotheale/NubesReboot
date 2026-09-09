@@ -1,8 +1,9 @@
+use crate::app::Game;
 use crate::engine::Engine;
 
 pub struct EntryPoint {
     proxy: winit::event_loop::EventLoopProxy<()>,
-    engine: Option<Engine>
+    engine: Option<Engine<Game>>
 }
 
 impl EntryPoint {

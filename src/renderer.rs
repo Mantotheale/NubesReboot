@@ -1,6 +1,7 @@
 mod rect;
-mod texture;
+pub mod texture;
 mod segment;
+mod render_primitive;
 
 use crate::{
     renderer::{
@@ -22,10 +23,10 @@ use crate::{
     util::image_utils
 };
 use rect::rect_batch::RectBatch;
-use std::cmp::Ordering;
 use std::path::Path;
 use std::sync::Arc;
 use wgpu::CurrentSurfaceTexture;
+use crate::renderer::render_primitive::{Fill, RenderPrimitive, Shape};
 use crate::renderer::segment::segment_batch::SegmentBatch;
 
 #[derive(Debug)]
@@ -52,59 +53,6 @@ impl std::fmt::Display for BeginSceneError {
 }
 
 impl std::error::Error for BeginSceneError { }
-
-enum Primitive {
-    Rect { rect: Rect2f, fill: Fill },
-    Segment { segment: Segment2f, pixel_width: PositiveF32, color: Color }
-}
-
-impl Primitive {
-    fn draw_order(a: &Self, b: &Self) -> Ordering {
-        match a {
-            Primitive::Rect { fill: fill_a, .. } => match b {
-                Primitive::Rect { fill: fill_b, .. } => Fill::draw_order(fill_a, fill_b),
-                Primitive::Segment { .. } => Ordering::Greater
-            }
-            Primitive::Segment { .. } => match b {
-                Primitive::Rect { .. } => Ordering::Less,
-                Primitive::Segment { .. } => Ordering::Equal
-            }
-        }
-    }
-}
-
-#[derive(Clone)]
-pub enum Fill {
-    Color(Color),
-    TextureHandle(TextureHandle)
-}
-
-impl Fill {
-    fn draw_order(a: &Self, b: &Self) -> Ordering {
-        match a {
-            Fill::Color(_) => match b {
-                Fill::Color(_) => Ordering::Equal,
-                Fill::TextureHandle(_) => Ordering::Less
-            }
-            Fill::TextureHandle(tex_a) => match b {
-                Fill::Color(_) => Ordering::Greater,
-                Fill::TextureHandle(tex_b) => Ord::cmp(&tex_a.id(), &tex_b.id())
-            }
-        }
-    }
-}
-
-struct RenderCommand {
-    primitive: Primitive,
-    z_index: i32
-}
-
-impl RenderCommand {
-    fn draw_order(a: &Self, b: &Self) -> Ordering {
-        Ord::cmp(&a.z_index, &b.z_index)
-            .then_with(|| Primitive::draw_order(&a.primitive, &b.primitive))
-    }
-}
 
 pub struct IdleRenderer {
     surface: wgpu::Surface<'static>,
@@ -360,20 +308,20 @@ impl IdleRenderer {
 pub struct InProgressRenderer<'a> {
     renderer: &'a mut IdleRenderer,
     surface_texture: wgpu::SurfaceTexture,
-    render_commands: Vec<RenderCommand>
+    render_commands: Vec<RenderPrimitive>
 }
 
 impl<'a> InProgressRenderer<'a> {
     pub fn add_segment(&mut self, segment: Segment2f, color: Color, pixel_width: PositiveF32, z_index: i32) {
-        self.render_commands.push(RenderCommand {
-            primitive: Primitive::Segment { segment, pixel_width, color },
+        self.render_commands.push(RenderPrimitive {
+            shape: Shape::Segment { segment, pixel_width, color },
             z_index,
         });
     }
 
     pub fn add_rect(&mut self, rect: Rect2f, fill: Fill, z_index: i32) {
-        self.render_commands.push(RenderCommand {
-            primitive: Primitive::Rect { rect, fill },
+        self.render_commands.push(RenderPrimitive {
+            shape: Shape::Rect { rect, fill },
             z_index,
         });
     }
@@ -418,10 +366,10 @@ impl<'a> InProgressRenderer<'a> {
         self.add_segment(self.renderer.segment_2, self.renderer.yellow, PositiveF32::new(3.0).unwrap(), 1);
         self.add_segment(self.renderer.segment_3, self.renderer.white, PositiveF32::new(4.0).unwrap(), 1);
 
-        self.render_commands.sort_by(|a, b| RenderCommand::draw_order(a, b));
+        self.render_commands.sort_by(|a, b| RenderPrimitive::draw_order(a, b));
         for command in self.render_commands {
-            match command.primitive {
-                Primitive::Rect { rect, fill, .. } => {
+            match command.shape {
+                Shape::Rect { rect, fill, .. } => {
                     let res = self.renderer.rect_batch.push(rect, fill.clone());
                     if res.is_err() {
                         self.renderer.rect_batch.draw(&mut render_pass);
@@ -429,7 +377,7 @@ impl<'a> InProgressRenderer<'a> {
                         self.renderer.rect_batch.push(rect, fill).expect("The batch is now empty");
                     }
                 }
-                Primitive::Segment { segment, color, pixel_width } => {
+                Shape::Segment { segment, color, pixel_width } => {
                     let res = self.renderer.segment_batch.push(segment, color, pixel_width);
                     if res.is_err() {
                         self.renderer.segment_batch.draw(&mut render_pass, (width, height));
