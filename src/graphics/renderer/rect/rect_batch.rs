@@ -1,10 +1,10 @@
-use std::collections::HashMap;
 use crate::constants;
+use crate::graphics::renderer::Fill;
+use crate::graphics::renderer::rect::RectVertex;
+use crate::graphics::texture::texture_handle::TextureHandle;
+use crate::graphics::texture::{Texture, TextureId};
 use crate::math::rect2f::Rect2f;
-use crate::renderer::Fill;
-use crate::renderer::rect::RectVertex;
-use crate::renderer::texture::{Texture, TextureId};
-use crate::renderer::texture::texture_handle::TextureHandle;
+use std::collections::HashMap;
 
 pub struct RectBatch {
     inserted_rects: usize,
@@ -44,7 +44,7 @@ impl RectBatch {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Rect batch shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../../../resources/shaders/rect_shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../../../../resources/shaders/rect_shader.wgsl").into()),
         });
 
         let texture_pool = TexturePool::new(&device, &queue);

@@ -3,12 +3,12 @@ use winit::event_loop::EventLoop;
 
 mod engine;
 mod entry_point;
-mod renderer;
 mod math;
 mod color;
 mod constants;
 mod util;
 mod app;
+mod graphics;
 
 pub fn main() {
     let event_loop = EventLoop::with_user_event().build().expect("Couldn't build event loop");

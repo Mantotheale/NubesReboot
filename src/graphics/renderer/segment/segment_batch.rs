@@ -1,9 +1,9 @@
+use crate::graphics::renderer::segment::SegmentVertex;
 use crate::{
-    constants,
     color::Color,
+    constants,
     math::positive_f32::PositiveF32,
-    math::segment2f::Segment2f,
-    renderer::segment::SegmentVertex
+    math::segment2f::Segment2f
 };
 
 pub struct SegmentBatch {
@@ -46,7 +46,7 @@ impl SegmentBatch {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Segment batch shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../../../resources/shaders/segment_shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../../../../resources/shaders/segment_shader.wgsl").into()),
         });
 
         let screen_dimensions_buffer = device.create_buffer(&wgpu::BufferDescriptor {

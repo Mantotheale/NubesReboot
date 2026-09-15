@@ -1,20 +1,10 @@
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 use crate::app::App;
 use crate::color::Color;
+use crate::graphics::renderer::IdleRenderer;
+use crate::graphics::{GpuContext, InitializationError, LostSurfaceError};
 use crate::math::unit_f32::UnitF32;
-use crate::renderer::IdleRenderer;
-
-#[derive(Debug)]
-pub struct LostSurfaceError { }
-
-#[derive(Debug)]
-pub enum InitializationError {
-    CreateSurfaceError(wgpu::CreateSurfaceError),
-    AdapterError(wgpu::RequestAdapterError),
-    RequestDeviceError(wgpu::RequestDeviceError),
-    NoSRGBSurface,
-}
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 pub struct Engine<T: App> {
     proxy: winit::event_loop::EventLoopProxy<()>,
@@ -32,8 +22,9 @@ impl<T: App> Engine<T> {
         let window_attributes = winit::window::Window::default_attributes();
         let window = event_loop.create_window(window_attributes)
             .expect("Couldn't create a window");
-
         let window = Arc::new(window);
+        
+        let gpu_context = GpuContext::new(window).await?;
 
         let mut renderer = IdleRenderer::new(window.clone()).await.expect("Should not panic");
         renderer.set_clear_color(Color::new(

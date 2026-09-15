@@ -1,64 +1,31 @@
 mod rect;
-pub mod texture;
 mod segment;
 mod render_primitive;
 
+use crate::graphics::GpuContext;
+use crate::graphics::renderer::render_primitive::{Fill, RenderPrimitive, Shape};
+use crate::graphics::renderer::segment::segment_batch::SegmentBatch;
+use crate::graphics::texture::{
+    texture_atlas::TextureAtlas
+    ,
+    texture_handle::TextureHandle};
 use crate::{
-    renderer::{
-        texture::{
-            texture_handle::TextureHandle,
-            texture_atlas::TextureAtlas
-        },
-    },
-    math::{
-        unit_f32::UnitF32,
-        segment2f::Segment2f,
-        rect2f::Rect2f,
-        positive_f32::PositiveF32,
-        point2f::Point2f
-    },
-    engine::InitializationError,
-    constants,
     color::Color,
-    util::image_utils
+    constants,
+    math::{
+        point2f::Point2f
+        ,
+        positive_f32::PositiveF32,
+        rect2f::Rect2f,
+        segment2f::Segment2f,
+        unit_f32::UnitF32},
+    util::image_utils,
 };
 use rect::rect_batch::RectBatch;
 use std::path::Path;
-use std::sync::Arc;
-use wgpu::CurrentSurfaceTexture;
-use crate::renderer::render_primitive::{Fill, RenderPrimitive, Shape};
-use crate::renderer::segment::segment_batch::SegmentBatch;
-
-#[derive(Debug)]
-pub enum BeginSceneError {
-    ValidationError,
-    FrameTimeoutError,
-    OccludedSurfaceError,
-    OutdatedConfigError,
-    LostSurfaceError
-}
-
-impl std::fmt::Display for BeginSceneError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let msg = match self {
-            BeginSceneError::ValidationError => "Validation error occurred while retrieving the render texture, wait until validation occurs",
-            BeginSceneError::FrameTimeoutError => "Timeout occurred while trying to retrieve the next texture, skip it and retry later",
-            BeginSceneError::OccludedSurfaceError => "The window is occluded, so skip the rendering",
-            BeginSceneError::OutdatedConfigError => "The surface changed, update the config and retry again this frame",
-            BeginSceneError::LostSurfaceError => "The surface is lost, the render system should be reset"
-        };
-
-        write!(f, "{}", msg)
-    }
-}
-
-impl std::error::Error for BeginSceneError { }
 
 pub struct IdleRenderer {
-    surface: wgpu::Surface<'static>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
+    gpu_context: GpuContext,
     clear_color: Color,
     rect_batch: RectBatch,
     rect_1: Rect2f,
@@ -83,55 +50,9 @@ pub struct IdleRenderer {
 }
 
 impl IdleRenderer {
-    pub async fn new(window: Arc<winit::window::Window>) -> Result<Self, InitializationError> {
-        let instance = wgpu::Instance::new(
-            wgpu::InstanceDescriptor::new_with_display_handle(
-                Box::new(window.clone())
-            )
-        );
-
-        let surface = instance.create_surface(window.clone())
-            .map_err(|err| InitializationError::CreateSurfaceError(err))?;
-
-        let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            force_fallback_adapter: false,
-            compatible_surface: Some(&surface),
-            apply_limit_buckets: true,
-        }).await.map_err(|err| InitializationError::AdapterError(err))?;
-
-        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
-            label: None,
-            required_features: wgpu::Features::empty(),
-            required_limits: Default::default(),
-            experimental_features: Default::default(),
-            memory_hints: Default::default(),
-            trace: Default::default(),
-        }).await.map_err(|err| InitializationError::RequestDeviceError(err))?;
-
-        let surface_caps = surface.get_capabilities(&adapter);
-
-        let surface_format = *surface_caps.formats.iter()
-            .find(|f| f.is_srgb())
-            .ok_or(InitializationError::NoSRGBSurface)?;
-
-        let window_size = window.inner_size();
-
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface_format,
-            color_space: wgpu::SurfaceColorSpace::Auto,
-            width: window_size.width,
-            height: window_size.height,
-            present_mode: wgpu::PresentMode::AutoNoVsync,
-            desired_maximum_frame_latency: 2,
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            view_formats: vec![],
-        };
-
-        surface.configure(&device, &config);
-
-        let rect_batch = RectBatch::new(device.clone(), queue.clone(), config.format);
+    pub async fn new(gpu_context: GpuContext) -> Self {
+        
+        let rect_batch = RectBatch::new(gpu_context.device().clone(), gpu_context.queue().clone(), gpu_context.surface_format());
 
         let rect_1 = Rect2f::new(
             Point2f::new(-0.75, -0.75),
@@ -221,12 +142,12 @@ impl IdleRenderer {
             (rock_path, rock_image),
         ];
         
-        let atlas = TextureAtlas::new(&device, &queue, &tiles).unwrap();
+        let atlas = TextureAtlas::new(&gpu_context.device(), &gpu_context.queue(), &tiles).unwrap();
         let reshiram_texture = atlas.get_tile(reshiram_path).unwrap().clone();
         let mewtwo_texture = atlas.get_tile(mewtwo_path).unwrap().clone();
         let rock_texture = atlas.get_tile(rock_path).unwrap().clone();
 
-        let segment_batch = SegmentBatch::new(device.clone(), queue.clone(), config.format);
+        let segment_batch = SegmentBatch::new(gpu_context.device(), gpu_context.queue(), gpu_context.surface_format());
 
         let segment_1 = Segment2f::new(
             Point2f::new(-0.6, -0.6),
@@ -246,11 +167,8 @@ impl IdleRenderer {
             constants::MATH_EPSILON
         ).unwrap();
 
-        Ok(Self {
-            surface,
-            device,
-            queue,
-            config,
+        Self {
+            gpu_context,
             clear_color: Color::SOLID_BLACK,
             rect_batch,
             reshiram_texture,
@@ -272,7 +190,7 @@ impl IdleRenderer {
             segment_1,
             segment_2,
             segment_3
-        })
+        }
     }
 
     pub fn set_clear_color(&mut self, color: Color) {

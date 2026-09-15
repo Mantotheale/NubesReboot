@@ -1,11 +1,11 @@
-use std::collections::HashMap;
-use crate::util::image_utils::ImageData;
-use std::path::{Path, PathBuf};
-use image::{EncodableLayout, ImageBuffer};
 use crate::constants;
-use crate::renderer::texture::Texture;
-use crate::renderer::texture::texture_handle::TextureHandle;
-use crate::renderer::texture::uv_rect::{TexCoord, UVOffset, UVRect};
+use crate::graphics::texture::Texture;
+use crate::graphics::texture::texture_handle::TextureHandle;
+use crate::graphics::texture::uv_rect::{TexCoord, UVOffset, UVRect};
+use crate::util::image_utils::ImageData;
+use image::{EncodableLayout, ImageBuffer};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 pub struct TextureAtlas {
     tiles: HashMap<PathBuf, TextureHandle>
@@ -99,7 +99,7 @@ impl TextureAtlas {
         }
 
         image::imageops::flip_vertical_in_place(&mut atlas);
-        atlas.save("C:\\Users\\a-mantonico\\Downloads\\ciao.png").unwrap();
+        _ = atlas.save("C:\\Users\\a-mantonico\\Downloads\\ciao.png");
         
         texture_handles
     }
