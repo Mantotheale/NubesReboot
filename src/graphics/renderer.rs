@@ -2,7 +2,7 @@ mod rect;
 mod segment;
 mod render_primitive;
 
-use crate::graphics::GpuContext;
+use crate::graphics::{FetchSurfaceResult, GpuContext, LostSurfaceError, SkipRender};
 use crate::graphics::renderer::render_primitive::{Fill, RenderPrimitive, Shape};
 use crate::graphics::renderer::segment::segment_batch::SegmentBatch;
 use crate::graphics::texture::{
@@ -23,6 +23,12 @@ use crate::{
 };
 use rect::rect_batch::RectBatch;
 use std::path::Path;
+
+pub enum BeginSceneResult<'a> {
+    Success(InProgressRenderer<'a>),
+    SkipRender(SkipRender),
+    LostSurface(LostSurfaceError)
+}
 
 pub struct IdleRenderer {
     gpu_context: GpuContext,
@@ -197,28 +203,24 @@ impl IdleRenderer {
         self.clear_color = color;
     }
 
-    pub fn begin_scene(&mut self) -> Result<InProgressRenderer<'_>, BeginSceneError> {
-        let surface_texture = match self.surface.get_current_texture() {
-            CurrentSurfaceTexture::Success(t) | CurrentSurfaceTexture::Suboptimal(t) => t,
-            CurrentSurfaceTexture::Timeout => return Err(BeginSceneError::FrameTimeoutError),
-            CurrentSurfaceTexture::Occluded => return Err(BeginSceneError::OccludedSurfaceError),
-            CurrentSurfaceTexture::Validation => return Err(BeginSceneError::ValidationError),
-            CurrentSurfaceTexture::Outdated => return Err(BeginSceneError::OutdatedConfigError),
-            CurrentSurfaceTexture::Lost => return Err(BeginSceneError::LostSurfaceError)
-        };
-
-        Ok(InProgressRenderer {
-            renderer: self,
-            surface_texture,
-            render_commands: Vec::new()
-        })
+    pub fn begin_scene(&mut self) -> BeginSceneResult {
+        match self.gpu_context.fetch_render_surface() {
+            FetchSurfaceResult::Success(surface_texture) =>
+                BeginSceneResult::Success(
+                    InProgressRenderer {
+                        renderer: self,
+                        surface_texture,
+                        render_commands: Vec::new()
+                    }
+                ),
+            FetchSurfaceResult::SkipRender(err) => BeginSceneResult::SkipRender(err),
+            FetchSurfaceResult::LostSurface(err) => BeginSceneResult::LostSurface(err)
+        }
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
         if width > 0 && height > 0 {
-            self.config.width = width;
-            self.config.height = height;
-            self.surface.configure(&self.device, &self.config);
+            self.gpu_context.update_screen_dimensions(width, height);
         }
     }
 }
@@ -247,7 +249,7 @@ impl<'a> InProgressRenderer<'a> {
     pub fn end_scene(mut self) {
         let view = self.surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder = self.renderer.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        let mut encoder = self.renderer.gpu_context.device().create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("render pass"),
@@ -268,7 +270,7 @@ impl<'a> InProgressRenderer<'a> {
             multiview_mask: None,
         });
 
-        let (width, height) = (self.renderer.config.width, self.renderer.config.height);
+        let (width, height) = self.renderer.gpu_context.screen_dimensions();
 
         self.add_rect(self.renderer.rect_1, Fill::Color(self.renderer.yellow), 1);
         self.add_rect(self.renderer.rect_2, Fill::Color(self.renderer.white), 1);
@@ -313,7 +315,7 @@ impl<'a> InProgressRenderer<'a> {
         drop(render_pass);
 
         let command_buffer = encoder.finish();
-        self.renderer.queue.submit(std::iter::once(command_buffer));
-        self.renderer.queue.present(self.surface_texture);
+        self.renderer.gpu_context.queue().submit(std::iter::once(command_buffer));
+        self.renderer.gpu_context.queue().present(self.surface_texture);
     }
 }

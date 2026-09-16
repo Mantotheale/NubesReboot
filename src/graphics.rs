@@ -119,6 +119,12 @@ impl GpuContext {
         })
     }
 
+    pub fn update_screen_dimensions(&mut self, width: u32, height: u32) {
+        self.config.width = width;
+        self.config.height = height;
+        self.surface.configure(&self.device, &self.config);
+    }
+
     pub fn fetch_render_surface(&self) -> FetchSurfaceResult {
         match self.surface.get_current_texture() {
             CurrentSurfaceTexture::Success(t) | CurrentSurfaceTexture::Suboptimal(t)
@@ -141,5 +147,9 @@ impl GpuContext {
 
     pub fn queue(&self) -> wgpu::Queue {
         self.queue.clone()
+    }
+
+    pub fn screen_dimensions(&self) -> (u32, u32) {
+        (self.config.width, self.config.height)
     }
 }

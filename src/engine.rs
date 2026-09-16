@@ -1,7 +1,7 @@
 use crate::app::App;
 use crate::color::Color;
-use crate::graphics::renderer::IdleRenderer;
-use crate::graphics::{GpuContext, InitializationError, LostSurfaceError};
+use crate::graphics::renderer::{BeginSceneResult, IdleRenderer};
+use crate::graphics::{GpuContext, InitializationError, LostSurfaceError, SkipRender};
 use crate::math::unit_f32::UnitF32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -24,9 +24,9 @@ impl<T: App> Engine<T> {
             .expect("Couldn't create a window");
         let window = Arc::new(window);
         
-        let gpu_context = GpuContext::new(window).await?;
+        let gpu_context = GpuContext::new(window.clone()).await?;
 
-        let mut renderer = IdleRenderer::new(window.clone()).await.expect("Should not panic");
+        let mut renderer = IdleRenderer::new(gpu_context).await;
         renderer.set_clear_color(Color::new(
             UnitF32::new(0.2).expect("Valid color channel"),
             UnitF32::new(0.2).expect("Valid color channel"),
@@ -45,8 +45,8 @@ impl<T: App> Engine<T> {
             next_one_sec_update: now + one_sec_duration,
             update_duration,
             one_sec_duration,
+            app: T::init(),
             renderer,
-            app: T::init()
         })
     }
 
@@ -83,8 +83,16 @@ impl<T: App> Engine<T> {
     fn render(&mut self) -> Result<(), LostSurfaceError> {
         self.window.request_redraw();
 
-        let scene_renderer = self.renderer.begin_scene().expect("Should not panic");
-        scene_renderer.end_scene();
+        match self.renderer.begin_scene() {
+            BeginSceneResult::Success(scene_renderer) => scene_renderer.end_scene(),
+            BeginSceneResult::SkipRender(skip_render) => {
+                if let SkipRender::OutdatedConfig = skip_render {
+                    let screen_dimensions = self.window.inner_size();
+                    self.renderer.resize(screen_dimensions.width, screen_dimensions.height);
+                }
+            }
+            BeginSceneResult::LostSurface(err) => return Err(err)
+        }
 
         Ok(())
     }
