@@ -1,7 +1,7 @@
-use crate::color::Color;
 use crate::graphics::texture::texture_handle::TextureHandle;
 use crate::graphics::texture::uv_rect::UVRect;
 use crate::math::rect2f::Rect2f;
+use crate::util::color::Color;
 
 pub mod rect_batch;
 

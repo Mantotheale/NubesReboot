@@ -4,7 +4,6 @@ use winit::event_loop::EventLoop;
 mod engine;
 mod entry_point;
 mod math;
-mod color;
 mod constants;
 mod util;
 mod app;

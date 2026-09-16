@@ -1,6 +1,6 @@
 use crate::graphics::renderer::segment::SegmentVertex;
+use crate::util::color::Color;
 use crate::{
-    color::Color,
     constants,
     math::positive_f32::PositiveF32,
     math::segment2f::Segment2f

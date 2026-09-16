@@ -1,8 +1,8 @@
-use crate::color::Color;
 use crate::graphics::texture::texture_handle::TextureHandle;
 use crate::math::positive_f32::PositiveF32;
 use crate::math::rect2f::Rect2f;
 use crate::math::segment2f::Segment2f;
+use crate::util::color::Color;
 use std::cmp::Ordering;
 
 #[derive(Clone)]

@@ -1,8 +1,8 @@
 use crate::app::App;
-use crate::color::Color;
 use crate::graphics::renderer::{BeginSceneResult, IdleRenderer};
 use crate::graphics::{GpuContext, InitializationError, LostSurfaceError, SkipRender};
 use crate::math::unit_f32::UnitF32;
+use crate::util::color::Color;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 

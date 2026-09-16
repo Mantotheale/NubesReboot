@@ -2,15 +2,15 @@ mod rect;
 mod segment;
 mod render_primitive;
 
-use crate::graphics::{FetchSurfaceResult, GpuContext, LostSurfaceError, SkipRender};
 use crate::graphics::renderer::render_primitive::{Fill, RenderPrimitive, Shape};
 use crate::graphics::renderer::segment::segment_batch::SegmentBatch;
 use crate::graphics::texture::{
     texture_atlas::TextureAtlas
     ,
     texture_handle::TextureHandle};
+use crate::graphics::{FetchSurfaceResult, GpuContext, LostSurfaceError, SkipRender};
+use crate::util::color::Color;
 use crate::{
-    color::Color,
     constants,
     math::{
         point2f::Point2f
@@ -57,7 +57,7 @@ pub struct IdleRenderer {
 
 impl IdleRenderer {
     pub async fn new(gpu_context: GpuContext) -> Self {
-        
+
         let rect_batch = RectBatch::new(gpu_context.device().clone(), gpu_context.queue().clone(), gpu_context.surface_format());
 
         let rect_1 = Rect2f::new(
@@ -147,7 +147,7 @@ impl IdleRenderer {
             (mewtwo_path, mewtwo_image),
             (rock_path, rock_image),
         ];
-        
+
         let atlas = TextureAtlas::new(&gpu_context.device(), &gpu_context.queue(), &tiles).unwrap();
         let reshiram_texture = atlas.get_tile(reshiram_path).unwrap().clone();
         let mewtwo_texture = atlas.get_tile(mewtwo_path).unwrap().clone();
@@ -203,7 +203,7 @@ impl IdleRenderer {
         self.clear_color = color;
     }
 
-    pub fn begin_scene(&mut self) -> BeginSceneResult {
+    pub fn begin_scene(&mut self) -> BeginSceneResult<'_> {
         match self.gpu_context.fetch_render_surface() {
             FetchSurfaceResult::Success(surface_texture) =>
                 BeginSceneResult::Success(

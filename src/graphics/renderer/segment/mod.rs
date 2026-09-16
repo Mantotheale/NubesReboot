@@ -1,8 +1,8 @@
 pub mod segment_batch;
 
+use crate::util::color::Color;
 use crate::{
     constants::MATH_EPSILON,
-    color::Color,
     math::{
         positive_f32::PositiveF32,
         segment2f::Segment2f

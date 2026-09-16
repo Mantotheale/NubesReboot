@@ -3,6 +3,7 @@ use wgpu::CurrentSurfaceTexture;
 
 pub mod renderer;
 pub mod texture;
+mod tex;
 
 #[derive(Debug)]
 pub enum InitializationError {
@@ -128,7 +129,7 @@ impl GpuContext {
     pub fn fetch_render_surface(&self) -> FetchSurfaceResult {
         match self.surface.get_current_texture() {
             CurrentSurfaceTexture::Success(t) | CurrentSurfaceTexture::Suboptimal(t)
-                => FetchSurfaceResult::Success(t),
+            => FetchSurfaceResult::Success(t),
             CurrentSurfaceTexture::Timeout => FetchSurfaceResult::SkipRender(SkipRender::FrameTimeout),
             CurrentSurfaceTexture::Occluded => FetchSurfaceResult::SkipRender(SkipRender::OccludedSurface),
             CurrentSurfaceTexture::Validation => FetchSurfaceResult::SkipRender(SkipRender::ValidationError),
