@@ -1,11 +1,12 @@
 use std::path::{Path, PathBuf};
-use image::GenericImageView;
+use image::{EncodableLayout, GenericImageView};
 use crate::constants;
 
 #[derive(Debug)]
 pub enum ReadImageError {
     FileNotFound(PathBuf),
     ImageError(image::ImageError),
+    NotRGBAImageError
 }
 
 impl std::fmt::Display for ReadImageError {
@@ -13,6 +14,7 @@ impl std::fmt::Display for ReadImageError {
         match self {
             ReadImageError::FileNotFound(path) => write!(f, "File not found: {:?}", path),
             ReadImageError::ImageError(err) => write!(f, "Image error: {}", err),
+            ReadImageError::NotRGBAImageError => write!(f, "The loaded image doesn't support RBGA channels"),
         }
     }
 }
@@ -42,11 +44,11 @@ impl std::fmt::Display for PixelOutOfBoundError {
 impl std::error::Error for PixelOutOfBoundError { }
 
 pub struct ImageData {
-    image: image::DynamicImage
+    image: image::RgbaImage
 }
 
 impl ImageData {
-       pub fn width(&self) -> u32 {
+    pub fn width(&self) -> u32 {
         self.image.width()
     }
 
@@ -56,7 +58,11 @@ impl ImageData {
 
     pub fn get_pixel(&self, row: u32, col: u32) -> Result<image::Rgba<u8>, PixelOutOfBoundError> {
         if row >= self.height() || col >= self.width() { Err(PixelOutOfBoundError::new(row, col, self.width(), self.height())) }
-        else { Ok(self.image.get_pixel(col, row)) }
+        else { Ok(*self.image.get_pixel(col, row)) }
+    }
+
+    pub fn data(&self) -> &[u8] {
+        self.image.as_bytes()
     }
 }
 
@@ -67,7 +73,8 @@ pub fn read_image(path: &Path) -> Result<ImageData, ReadImageError> {
     let image_bytes: &[u8] = file.contents();
     let image = image::load_from_memory(image_bytes)
         .map_err(|err| ReadImageError::ImageError(err))?
-        .flipv();
+        .flipv()
+        .into_rgba8();
 
     Ok(ImageData { image })
 }
