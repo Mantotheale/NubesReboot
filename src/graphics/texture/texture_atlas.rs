@@ -29,7 +29,7 @@ impl TextureAtlas {
 
         let mut atlas_size = 32;
         let (placements, atlas_size) = loop {
-            if atlas_size > constants::MAX_TEXTURE_SIZE as u32 { return Err(()) }
+            if atlas_size > constants::TEXTURE_MAX_SIZE as u32 { return Err(()) }
 
             if let Ok(placements) = Self::generate_placements(&tiles, atlas_size) {
                 break (placements, atlas_size);

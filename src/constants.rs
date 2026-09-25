@@ -9,8 +9,10 @@ pub const RECTS_MAX_BATCH_SIZE: usize = 100;
 
 pub const TEXTURE_SLOTS: usize = 16;
 
-pub const MAX_TEXTURE_SIZE: usize = 2048;
+pub const TEXTURE_MAX_SIZE: usize = 2048;
 
 pub const RESOURCE_DIR: include_dir::Dir = include_dir!("$CARGO_MANIFEST_DIR/resources");
 
 pub const TEXTURE_ROW_ALIGNMENT_BYTES: u32 = 256;
+
+pub const ATLAS_MIN_SIZE: usize = 64;

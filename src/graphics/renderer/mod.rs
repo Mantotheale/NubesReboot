@@ -58,7 +58,7 @@ pub struct IdleRenderer {
 
 impl IdleRenderer {
     pub async fn new(gpu_context: GpuContext) -> Self {
-        let x = Tex::new(&gpu_context.device(), &gpu_context.queue(), &image_utils::read_image("tiles/mewtwo.png".as_ref()).unwrap());
+        let x = Tex::new(&gpu_context.device(), &gpu_context.queue(), &image_utils::read_image("tiles/mewtwo.png".as_ref()).unwrap()).unwrap();
         let content = x.texture_content(&gpu_context.device(), &gpu_context.queue());
         let to_save = image::RgbaImage::from_raw(x.width(), x.height(), content).unwrap();
         to_save.save("C:\\Users\\a-mantonico\\Desktop\\img.png").unwrap();
