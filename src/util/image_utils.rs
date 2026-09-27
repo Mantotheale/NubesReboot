@@ -64,6 +64,16 @@ impl ImageData {
             .ok_or(NotRGBAImageError)?;
         Ok(Self { image })
     }
+    
+    pub fn blank_image(width: u32, height: u32) -> Self {
+        let image = image::RgbaImage::from_raw(
+            width, 
+            height, 
+            vec![0u8; (width * height * 4) as usize]
+        ).expect("Blank image contains valid RGBA data");
+        
+        Self { image }
+    }
 
     pub fn width(&self) -> u32 {
         self.image.width()
